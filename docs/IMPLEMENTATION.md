@@ -29,12 +29,12 @@ This status is deliberately separate from the proposed PRD. Implemented source i
 
 ## Actual remote mobile validation
 
-[GitHub Actions run 38715855688](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/38715855688) passed all jobs for app source `6f126563d7c039c6d32566ba2d7c89214e4da546`:
+[GitHub Actions run 38719406316](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/38719406316) passed all four jobs for app source `2c9d72b40f7ea55b27820f94c77d97d4fec24636`:
 
-- Real package resolution, Flutter static/type analysis and Flutter unit/widget tests with coverage.
+- Locked package resolution, strict Flutter static/type analysis (**no issues**) and **13 Flutter unit/widget tests** with coverage. Both dependency lockfiles are checked in and match the final CI output.
 - Android debug **and optimized release-mode APK** compilation and artifact upload. Both are development/debug signed, not Play-ready signed releases.
 - Xcode iOS simulator build/artifact and **unsigned iOS device release** compilation. No signed IPA has been produced.
-- Repository checks, asset regression tests and compiled 3/50-page PDF writer checks.
+- Repository checks, **eight Python asset/lock-transfer regression tests** and compiled 3/50-page PDF writer checks.
 
 See [BUILD_STATUS.md](BUILD_STATUS.md) for exact build evidence and downloads. Tooling now exposes public dependency locks through check annotations with compression, bounded chunks, integrity validation and no secret-file export. Eight local Python tests cover asset/lock-transfer regressions.
 
