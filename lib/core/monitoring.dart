@@ -1,5 +1,3 @@
-import 'dart:ui' show PlatformDispatcher;
-
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -61,8 +59,9 @@ class Monitoring {
           'pdf_export_succeeded',
           'pdf_export_failed',
           'share_opened',
-        }.contains(name))
+        }.contains(name)) {
       return;
+    }
     try {
       await FirebaseAnalytics.instance.logEvent(name: name);
     } catch (_) {

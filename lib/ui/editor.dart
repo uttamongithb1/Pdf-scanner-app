@@ -63,15 +63,17 @@ class _PageEditorState extends ConsumerState<PageEditor> {
             child: FutureBuilder<String>(
               future: preview,
               builder: (context, snapshot) {
-                if (snapshot.hasError)
+                if (snapshot.hasError) {
                   return Center(
                     child: TextButton(
                       onPressed: () => update(page),
                       child: const Text('Preview failed. Try again'),
                     ),
                   );
-                if (!snapshot.hasData)
+                }
+                if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
+                }
                 return InteractiveViewer(
                   transformationController: transform,
                   maxScale: 5,
@@ -160,8 +162,9 @@ class _PageEditorState extends ConsumerState<PageEditor> {
           onPressed: () async {
             await report(context, () async {
               final path = await preview;
-              if (context.mounted)
+              if (context.mounted) {
                 Navigator.pop(context, page.copyWith(thumb: path));
+              }
             });
           },
           child: const Text('Done'),
@@ -197,10 +200,11 @@ class _PageEditorState extends ConsumerState<PageEditor> {
         pages.add(edited.copyWith(thumb: path));
       }
       await c.updatePages(pages);
-      if (context.mounted)
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Filter applied to all pages')),
         );
+      }
     });
   }
 }
@@ -382,8 +386,9 @@ class _CropPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final polygon = Path()..moveTo(c[0] * size.width, c[1] * size.height);
-    for (var i = 1; i < 4; i++)
+    for (var i = 1; i < 4; i++) {
       polygon.lineTo(c[i * 2] * size.width, c[i * 2 + 1] * size.height);
+    }
     polygon.close();
     final outside = Path.combine(
       PathOperation.difference,

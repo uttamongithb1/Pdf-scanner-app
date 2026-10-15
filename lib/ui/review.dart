@@ -121,7 +121,7 @@ class ReviewScreen extends ConsumerWidget {
                                           await _edit(context, ref, index);
                                           return;
                                         }
-                                        if (value == 'up' || value == 'down')
+                                        if (value == 'up' || value == 'down') {
                                           await c.updatePages(
                                             moved(
                                               pages,
@@ -131,11 +131,12 @@ class ReviewScreen extends ConsumerWidget {
                                                   : index + 1,
                                             ),
                                           );
+                                        }
                                         if (value == 'remove') {
                                           await c.updatePages(
                                             [...pages]..removeAt(index),
                                           );
-                                          if (context.mounted)
+                                          if (context.mounted) {
                                             ScaffoldMessenger.of(
                                               context,
                                             ).showSnackBar(
@@ -158,8 +159,9 @@ class ReviewScreen extends ConsumerWidget {
                                                           );
                                                       if (now.any(
                                                         (e) => e.id == p.id,
-                                                      ))
+                                                      )) {
                                                         return;
+                                                      }
                                                       now.insert(
                                                         index
                                                             .clamp(
@@ -175,6 +177,7 @@ class ReviewScreen extends ConsumerWidget {
                                                 ),
                                               ),
                                             );
+                                          }
                                         }
                                         if (value == 'retake') {
                                           final before = List<PageAsset>.of(
@@ -302,10 +305,11 @@ class ReviewScreen extends ConsumerWidget {
         ],
       ),
     );
-    if (yes == true && context.mounted)
+    if (yes == true && context.mounted) {
       await report(context, () async {
         await ref.read(scannerProvider).discard();
         if (context.mounted) Navigator.pop(context);
       });
+    }
   }
 }

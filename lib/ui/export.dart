@@ -310,12 +310,13 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                         );
                         if (mounted) setState(() => saved = result);
                       } catch (e) {
-                        if (mounted)
+                        if (mounted) {
                           setState(
                             () => error = e is ScanFailure
                                 ? e.message
                                 : 'Could not finish. Your draft is safe. Please try again.',
                           );
+                        }
                       }
                     },
                     icon: const Icon(Icons.check),

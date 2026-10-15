@@ -23,6 +23,17 @@ Validated application source: `6f126563d7c039c6d32566ba2d7c89214e4da546` on `are
 
 The first iOS build exposed three empty launch image placeholders. They were replaced with valid PNG assets; Xcode then compiled both simulator and device release targets. Regression checks now validate PNG framing, CRCs, compressed pixels and declared icon dimensions.
 
+## Dependency locks and follow-up validation
+
+`pubspec.lock` and `ios/Podfile.lock` were retrieved from the successful [run 38717258360](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/38717258360), source `8ce49dcf672b8bfdc14184d029bc8886310f813c`. All four jobs in that run also passed; the resolved graph exactly matches the earlier fully passing app build above.
+
+| File | SHA-256 of actual CI-generated contents |
+|---|---|
+| `pubspec.lock` | `7759a1359a3ace49ba46b3c2d2b12b896f96de73cc51f7cc7c6c20279d5f25c8` |
+| `ios/Podfile.lock` | `714ce0739c406d5b6e79dfd105292c57c34869097e7bc5d772432fa7df16a1b1` |
+
+The shared test report confirms **13 Flutter tests passed**. The original analyzer invocations allowed informational lint findings, not errors or warnings. A follow-up change adds explicit blocks to multiline control-flow bodies and removes a redundant import; CI now requires strict `flutter analyze` and `flutter pub get --enforce-lockfile`. Its results must be checked independently rather than inferred from the earlier run.
+
 ## Downloads
 
 Sign in to GitHub if prompted. Actions artifacts have limited retention; rebuild if expired. Each download is an artifact ZIP containing the named APK or tarball.

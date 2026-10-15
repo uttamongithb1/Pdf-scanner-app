@@ -20,11 +20,11 @@ jobs:
           channel: stable
           cache: true
       - id: packages
-        run: python3 scripts/ci_run.py flutter pub get
+        run: python3 scripts/ci_run.py flutter pub get --enforce-lockfile
       - run: python3 scripts/ci_lockfiles.py emit pubspec.lock
-      - run: python3 scripts/ci_run.py flutter analyze --no-fatal-infos
+      - run: python3 scripts/ci_run.py flutter analyze
       - if: always() && steps.packages.outcome == 'success'
-        run: python3 scripts/ci_run.py flutter test --coverage --reporter expanded
+        run: python3 scripts/ci_run.py flutter test --no-pub --coverage --reporter expanded
       - if: always()
         run: |
           python3 scripts/check_repository.py
@@ -54,13 +54,13 @@ jobs:
           channel: stable
           cache: true
       - id: packages
-        run: python3 scripts/ci_run.py flutter pub get
-      - run: python3 scripts/ci_run.py flutter build apk --debug
+        run: python3 scripts/ci_run.py flutter pub get --enforce-lockfile
+      - run: python3 scripts/ci_run.py flutter build apk --debug --no-pub
       - uses: actions/upload-artifact@v4
         with:
           name: android-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
-      - run: python3 scripts/ci_run.py flutter build apk --release
+      - run: python3 scripts/ci_run.py flutter build apk --release --no-pub
       - uses: actions/upload-artifact@v4
         with:
           name: android-release-development-apk
@@ -77,8 +77,8 @@ jobs:
           channel: stable
           cache: true
       - id: packages
-        run: python3 scripts/ci_run.py flutter pub get
-      - run: python3 scripts/ci_run.py flutter build ios --simulator --debug
+        run: python3 scripts/ci_run.py flutter pub get --enforce-lockfile
+      - run: python3 scripts/ci_run.py flutter build ios --simulator --debug --no-pub
       - if: always() && hashFiles('ios/Podfile.lock') != ''
         run: python3 scripts/ci_lockfiles.py emit ios/Podfile.lock
       - run: tar -czf build/ios/ios-simulator-app.tar.gz -C build/ios/iphonesimulator Runner.app
@@ -87,7 +87,8 @@ jobs:
           name: ios-simulator-app
           path: build/ios/ios-simulator-app.tar.gz
           if-no-files-found: error
-      - run: python3 scripts/ci_run.py flutter build ios --release --no-codesign
+      - run: python3 scripts/ci_run.py flutter build ios --release --no-codesign --no-pub
+      - run: git diff --exit-code -- ios/Podfile.lock
 
   pdf-writer:
     timeout-minutes: 10

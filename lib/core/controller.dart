@@ -77,8 +77,9 @@ class ScannerController extends ChangeNotifier {
     if (value is bool) await prefs.setBool(key, value);
     if (value is int) await prefs.setInt(key, value);
     if (value is String) await prefs.setString(key, value);
-    if (key == 'diagnostics' || key == 'analytics')
+    if (key == 'diagnostics' || key == 'analytics') {
       await monitoring.consent(diagnostics, analytics);
+    }
     notifyListeners();
   }
 
@@ -166,8 +167,9 @@ class ScannerController extends ChangeNotifier {
     required int margin,
     required bool landscape,
   }) async {
-    if (draft == null || draft!.pages.isEmpty || busy || exporting)
+    if (draft == null || draft!.pages.isEmpty || busy || exporting) {
       throw ScanFailure('busy');
+    }
     exporting = true;
     phase = 'Preparing…';
     completed = 0;

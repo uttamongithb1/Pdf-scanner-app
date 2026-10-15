@@ -47,7 +47,7 @@ class _PdfViewerState extends ConsumerState<PdfViewer> {
     body: FutureBuilder<Map<String, dynamic>>(
       future: rendered,
       builder: (context, snapshot) {
-        if (snapshot.hasError)
+        if (snapshot.hasError) {
           return EmptyPanel(
             icon: Icons.insert_drive_file_outlined,
             title: 'This file is unavailable',
@@ -57,8 +57,10 @@ class _PdfViewerState extends ConsumerState<PdfViewer> {
               child: const Text('Try again'),
             ),
           );
-        if (!snapshot.hasData)
+        }
+        if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
+        }
         return ColoredBox(
           color: Theme.of(context).colorScheme.surfaceContainerHigh,
           child: InteractiveViewer(

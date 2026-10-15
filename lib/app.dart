@@ -128,8 +128,9 @@ Future<void> captureMenu(BuildContext context, ScannerController c) async {
     }
     if (context.mounted &&
         c.draft?.pages.isNotEmpty == true &&
-        GoRouterState.of(context).uri.path != '/review')
+        GoRouterState.of(context).uri.path != '/review') {
       context.push('/review');
+    }
   });
 }
 
@@ -197,10 +198,11 @@ class _LibraryShellState extends ConsumerState<LibraryShell>
     final docs = c.documents
         .where((d) => d.title.toLowerCase().contains(query.toLowerCase()))
         .toList();
-    if (sort == 'name')
+    if (sort == 'name') {
       docs.sort(
         (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
       );
+    }
     if (sort == 'size') docs.sort((a, b) => b.bytes.compareTo(a.bytes));
     return Scaffold(
       appBar: AppBar(
@@ -290,8 +292,9 @@ class _LibraryShellState extends ConsumerState<LibraryShell>
                             : () => report(context, () async {
                                 await c.capture(gallery: true);
                                 if (context.mounted &&
-                                    c.draft?.pages.isNotEmpty == true)
+                                    c.draft?.pages.isNotEmpty == true) {
                                   context.push('/review');
+                                }
                               }),
                         icon: const Icon(Icons.photo_library_outlined),
                         label: const Text('Import photos'),
@@ -545,7 +548,7 @@ class DocumentTile extends ConsumerWidget {
     void open() => Navigator.of(
       context,
     ).push(MaterialPageRoute<void>(builder: (_) => PdfViewer(doc)));
-    if (!grid)
+    if (!grid) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Card(
@@ -563,6 +566,7 @@ class DocumentTile extends ConsumerWidget {
           ),
         ),
       );
+    }
     return Card(
       color: scheme.surfaceContainerLow,
       clipBehavior: Clip.antiAlias,
@@ -670,8 +674,9 @@ class DocumentTile extends ConsumerWidget {
       // Disposal after the dialog route's exit animation avoids a live field
       // listening to a disposed controller.
       Future<void>.delayed(const Duration(milliseconds: 400), text.dispose);
-      if (name != null && context.mounted)
+      if (name != null && context.mounted) {
         await report(context, () => c.rename(doc, name));
+      }
       return;
     }
     if (action == 'delete') {
@@ -711,8 +716,9 @@ class DocumentTile extends ConsumerWidget {
           ),
         ),
       );
-      if (yes == true && context.mounted)
+      if (yes == true && context.mounted) {
         await report(context, () => c.delete(doc, images: images));
+      }
     }
   }
 }

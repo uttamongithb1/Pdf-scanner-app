@@ -105,8 +105,9 @@ String safeStem(String input) {
   if (RegExp(
     r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$',
     caseSensitive: false,
-  ).hasMatch(s))
+  ).hasMatch(s)) {
     s = 'Scan_$s';
+  }
   // Clip code points, never split UTF-16 surrogate pairs.
   return String.fromCharCodes(s.runes.take(100));
 }
@@ -122,16 +123,18 @@ String formatSize(int bytes) => bytes < 1024 * 1024
 String shortDate(DateTime d) => '${d.day}/${d.month}/${d.year}';
 
 bool validCorners(List<double> c) {
-  if (c.length != 8 || c.any((v) => !v.isFinite || v < 0 || v > 1))
+  if (c.length != 8 || c.any((v) => !v.isFinite || v < 0 || v > 1)) {
     return false;
+  }
   double cross(int a, int b, int d) =>
       (c[b * 2] - c[a * 2]) * (c[d * 2 + 1] - c[b * 2 + 1]) -
       (c[b * 2 + 1] - c[a * 2 + 1]) * (c[d * 2] - c[b * 2]);
   if (List.generate(
     4,
     (i) => cross(i, (i + 1) % 4, (i + 2) % 4),
-  ).any((v) => v <= 0))
+  ).any((v) => v <= 0)) {
     return false;
+  }
   double area = 0;
   for (var i = 0; i < 4; i++) {
     final n = (i + 1) % 4;
