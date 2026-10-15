@@ -12,7 +12,7 @@ jobs:
   shared:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.35.7'
@@ -20,11 +20,14 @@ jobs:
           cache: true
       - id: packages
         run: python3 scripts/ci_run.py flutter pub get
+      - run: python3 scripts/ci_lockfiles.py emit pubspec.lock
       - run: python3 scripts/ci_run.py flutter analyze --no-fatal-infos
       - if: always() && steps.packages.outcome == 'success'
         run: python3 scripts/ci_run.py flutter test --coverage --reporter expanded
       - if: always()
-        run: python3 scripts/check_repository.py
+        run: |
+          python3 scripts/check_repository.py
+          python3 -m unittest discover -s test -p '*_test.py'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -34,8 +37,8 @@ jobs:
   android:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -51,10 +54,16 @@ jobs:
         with:
           name: android-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
+      - run: python3 scripts/ci_run.py flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-release-development-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
   ios:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.35.7'
@@ -63,16 +72,25 @@ jobs:
       - id: packages
         run: python3 scripts/ci_run.py flutter pub get
       - run: python3 scripts/ci_run.py flutter build ios --simulator --debug
+      - if: always() && hashFiles('ios/Podfile.lock') != ''
+        run: python3 scripts/ci_lockfiles.py emit ios/Podfile.lock
+      - run: tar -czf build/ios/ios-simulator-app.tar.gz -C build/ios/iphonesimulator Runner.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-app
+          path: build/ios/ios-simulator-app.tar.gz
+          if-no-files-found: error
+      - run: python3 scripts/ci_run.py flutter build ios --release --no-codesign
 
   pdf-writer:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
       - run: npm install --prefix /tmp/kotlin kotlin-compiler@2.1.0
