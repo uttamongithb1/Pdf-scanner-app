@@ -28,7 +28,7 @@ flutter run
 
 The native projects are included—do not regenerate them with `flutter create .`.
 
-**Development build, not store-ready.** The complete mobile app has not been compiled or run in this workspace. It lacks the mobile SDKs and normal SDK download hosts are restricted. The standalone Android PDF writer **was compiled and tested** with an independent PDF parser/renderer. Platform builds and physical-device qualification are still required. See the exact [implementation status](docs/IMPLEMENTATION.md).
+**Development build, not store-ready.** Real GitHub Actions builds passed: Android debug and optimized development APKs, iOS simulator and unsigned release compilation, Flutter analysis/tests, and native PDF writer checks. See [verified build results and downloads](docs/BUILD_STATUS.md) for current Android/iOS outcomes. Local SDK installation is blocked by workspace download restrictions, and no physical-device run is claimed. Production signing and device qualification remain necessary; see [implementation status](docs/IMPLEMENTATION.md).
 
 ## Where files go
 

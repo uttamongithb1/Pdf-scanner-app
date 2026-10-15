@@ -28,4 +28,8 @@ if code:
     for finding in findings[-20:]:
         annotation(finding[:4000])
     annotation('Command failed: '+' '.join(command)+'\n'+'\n'.join(tail)[-9000:])
+else:
+    summary = 'Command passed: ' + ' '.join(command) + '\n' + '\n'.join(list(tail)[-12:])
+    summary = summary[-2500:].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+    print('::notice title=Build summary::' + summary, flush=True)
 raise SystemExit(code)

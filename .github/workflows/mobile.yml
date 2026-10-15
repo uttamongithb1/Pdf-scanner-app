@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   shared:
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -35,6 +36,7 @@ jobs:
           path: pubspec.lock
           if-no-files-found: ignore
   android:
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -42,6 +44,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            android/**/*.gradle*
+            android/gradle/wrapper/gradle-wrapper.properties
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.35.7'
@@ -61,6 +67,7 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
   ios:
+    timeout-minutes: 30
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
@@ -83,6 +90,7 @@ jobs:
       - run: python3 scripts/ci_run.py flutter build ios --release --no-codesign
 
   pdf-writer:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

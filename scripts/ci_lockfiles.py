@@ -10,6 +10,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import zlib
 
 ALLOWED = {"pubspec.lock", "ios/Podfile.lock"}
 TITLE = "Public dependency lock"
@@ -23,8 +24,11 @@ def emit(name):
     if name not in ALLOWED:
         raise ValueError("Only public dependency lockfiles may be published")
     data = Path(name).read_bytes()
-    encoded = base64.b64encode(data).decode("ascii")
-    parts = [encoded[i:i + 6000] for i in range(0, len(encoded), 6000)]
+    if not data or len(data) > 256 * 1024:
+        raise ValueError("Unexpected lockfile size")
+    # Check annotations returned by GitHub's API truncate messages at 4096 bytes.
+    encoded = base64.b64encode(zlib.compress(data, 9)).decode("ascii")
+    parts = [encoded[i:i + 3000] for i in range(0, len(encoded), 3000)]
     if not parts or len(parts) > 8:
         raise ValueError("Unexpected lockfile size")
     digest = hashlib.sha256(data).hexdigest()
@@ -40,9 +44,10 @@ def fetch(run_id):
     repo = gh("repo", "view", "--json", "nameWithOwner")["nameWithOwner"]
     locks = {}
     for job in run["jobs"]:
-        pages = gh("api", "--paginate", "--slurp",
-                   f"repos/{repo}/check-runs/{job['databaseId']}/annotations?per_page=100")
-        for page in pages:
+        page_number = 1
+        while True:
+            page = gh("api", f"repos/{repo}/check-runs/{job['databaseId']}/annotations"
+                      f"?per_page=100&page={page_number}")
             for annotation in page:
                 if annotation.get("title") != TITLE:
                     continue
@@ -56,12 +61,19 @@ def fetch(run_id):
                 if entry[:2] != (digest, count) or index in entry[2]:
                     raise ValueError("Conflicting lockfile annotations")
                 entry[2][index] = part
+            if len(page) < 100:
+                break
+            page_number += 1
     if not locks:
         raise ValueError("No public lockfile annotations found in this run")
     for name, (digest, count, parts) in locks.items():
         if len(parts) != count:
             raise ValueError(f"Incomplete lockfile: {name}")
-        data = base64.b64decode("".join(parts[i] for i in range(count)), validate=True)
+        compressed = base64.b64decode("".join(parts[i] for i in range(count)), validate=True)
+        inflater = zlib.decompressobj()
+        data = inflater.decompress(compressed, 256 * 1024 + 1)
+        if not inflater.eof or inflater.unused_data or not 0 < len(data) <= 256 * 1024:
+            raise ValueError(f"Invalid compressed lockfile: {name}")
         if hashlib.sha256(data).hexdigest() != digest:
             raise ValueError(f"Checksum mismatch: {name}")
         target = Path(name)

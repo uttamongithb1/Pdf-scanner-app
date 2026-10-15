@@ -27,9 +27,20 @@ This status is deliberately separate from the proposed PRD. Implemented source i
 - Dart source formatting with the `dart_style` WASM formatter: applied.
 - **Actual Kotlin JPEG PDF writer compiled and executed on Java 17/Kotlin 2.1.0.** Independent PyMuPDF parsing/rendering verified 3-page order, A4/landscape/image-fit geometry, Unicode title metadata, xref offsets, 50-page writer output and incomplete-output handling.
 
-## Not executed here
+## Actual remote mobile validation
 
-Flutter dependency resolution, Flutter static/type analysis, Flutter unit/widget tests, Android app compilation, Xcode compilation, platform integration tests, camera/SAF/Files tests and physical-device performance tests. The workspace initially had none of the mobile toolchains, and its outbound host policy prevents downloading the normal Flutter/Android SDK artefacts. Syntax parsing is not type checking. A JRE/Kotlin compiler was obtained from allowed package registries solely for the independent PDF writer test.
+[GitHub Actions run 38715855688](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/38715855688) passed all jobs for app source `6f126563d7c039c6d32566ba2d7c89214e4da546`:
+
+- Real package resolution, Flutter static/type analysis and Flutter unit/widget tests with coverage.
+- Android debug **and optimized release-mode APK** compilation and artifact upload. Both are development/debug signed, not Play-ready signed releases.
+- Xcode iOS simulator build/artifact and **unsigned iOS device release** compilation. No signed IPA has been produced.
+- Repository checks, asset regression tests and compiled 3/50-page PDF writer checks.
+
+See [BUILD_STATUS.md](BUILD_STATUS.md) for exact build evidence and downloads. Tooling now exposes public dependency locks through check annotations with compression, bounded chunks, integrity validation and no secret-file export. Eight local Python tests cover asset/lock-transfer regressions.
+
+## Not executed
+
+Physical-device/emulator app runs, platform integration tests, camera/SAF/Files tests and physical-device performance tests. Local Flutter/Android compilation is still unavailable: official SDK download hosts are blocked by the workspace network policy, and Xcode requires macOS. The available Java installation is a test-only runtime, not a full JDK. Real mobile compilation above took place on GitHub-hosted runners; syntax parsing alone was not treated as type checking.
 
 ## Deliberate implementation differences from the proposal
 
@@ -45,7 +56,7 @@ Flutter dependency resolution, Flutter static/type analysis, Flutter unit/widget
 
 ## Release-blocking follow-up
 
-1. Resolve packages, commit the resulting lockfiles, compile both native apps, run Flutter analyzer/tests and address any toolchain/API findings.
+1. Maintain reviewed dependency locks and repeat the passing Android/iOS CI builds for changes. Compilation and shared tests now pass; this does not replace the device and release requirements below.
 2. Execute [DEVICE_TEST_PLAN.md](DEVICE_TEST_PLAN.md), including first-install offline fallback, low storage, provider disconnect and process death.
 3. Qualify 50-page limits and total native-process memory. Image raster work is page-at-a-time; iOS PDF internals and OS scanner memory are not proven constant-memory.
 4. Coordinate iOS Documents writes with external editors; qualify SAF providers, partial provider writes and rename/collision semantics. Add recoverable delete/rename transactions and retry/cleanup UI for provider rollback failures.
