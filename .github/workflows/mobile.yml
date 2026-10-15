@@ -55,12 +55,12 @@ jobs:
           cache: true
       - id: packages
         run: python3 scripts/ci_run.py flutter pub get --enforce-lockfile
-      - run: python3 scripts/ci_run.py flutter build apk --debug --no-pub
+      - run: python3 scripts/ci_run.py flutter build apk --debug
       - uses: actions/upload-artifact@v4
         with:
           name: android-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
-      - run: python3 scripts/ci_run.py flutter build apk --release --no-pub
+      - run: python3 scripts/ci_run.py flutter build apk --release
       - uses: actions/upload-artifact@v4
         with:
           name: android-release-development-apk
@@ -78,7 +78,7 @@ jobs:
           cache: true
       - id: packages
         run: python3 scripts/ci_run.py flutter pub get --enforce-lockfile
-      - run: python3 scripts/ci_run.py flutter build ios --simulator --debug --no-pub
+      - run: python3 scripts/ci_run.py flutter build ios --simulator --debug
       - if: always() && hashFiles('ios/Podfile.lock') != ''
         run: python3 scripts/ci_lockfiles.py emit ios/Podfile.lock
       - run: tar -czf build/ios/ios-simulator-app.tar.gz -C build/ios/iphonesimulator Runner.app
@@ -87,7 +87,7 @@ jobs:
           name: ios-simulator-app
           path: build/ios/ios-simulator-app.tar.gz
           if-no-files-found: error
-      - run: python3 scripts/ci_run.py flutter build ios --release --no-codesign --no-pub
+      - run: python3 scripts/ci_run.py flutter build ios --release --no-codesign
       - run: git diff --exit-code -- ios/Podfile.lock
 
   pdf-writer:
