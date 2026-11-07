@@ -36,9 +36,9 @@ source scripts/workspace_env.sh
 
 The environment helper exposes tools under `.cache` and respects externally supplied Flutter/Android/JAVA_HOME settings. Cache files are not committed and may need reinstalling in a fresh workspace. The capability checker intentionally fails if the full toolchain is missing.
 
-This Linux workspace has a Flutter 3.35.7 **source checkout**, Java 17 **runtime**, Kotlin 2.1.0 compiler and Python PDF/parser tools. It does **not** have a working Flutter/Dart binary SDK, full JDK, Android SDK/adb or Xcode. Download attempts to `storage.googleapis.com`, `pub.dev`, `dl.google.com`, and `services.gradle.org` fail under the workspace network policy. Temurin JDK downloads redirect to a blocked GitHub asset host as well. A source checkout alone cannot run Flutter.
+This Linux workspace currently has Python PDF/parser and Dart-formatting tools, but **not** a runnable Flutter/Dart binary SDK, full JDK, Android SDK/adb or Xcode. Earlier test-only Java/Kotlin tools and a Flutter source checkout were cached during build investigation; those caches are ephemeral and must not be assumed present. Download attempts to `storage.googleapis.com`, `pub.dev`, `dl.google.com`, and `services.gradle.org` fail under the workspace network policy. Temurin JDK downloads redirect to a blocked GitHub asset host as well. A source checkout alone cannot run Flutter.
 
-Actual mobile builds run on GitHub-hosted Linux/macOS runners, which install the required SDKs. This is not a local emulator or physical-device run. Normal GitHub Actions artifact downloads also redirect to a blocked blob host **from this workspace**; open the artifact links in your browser instead. The public dependency locks can be retrieved over GitHub's check-annotation API:
+Actual mobile builds run on GitHub-hosted Linux/macOS runners, which install the required SDKs. The reported Android emulator and iPhone simulator integration runs are remote, not local or physical-device runs. Normal GitHub Actions artifact downloads also redirect to a blocked blob host **from this workspace**; open the artifact links in your browser instead. The public dependency locks can be retrieved over GitHub's check-annotation API:
 
 ```sh
 # Run while HEAD matches the CI source revision. Requires authenticated gh.

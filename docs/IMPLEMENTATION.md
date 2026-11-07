@@ -22,7 +22,7 @@ Updated **7 November 2026**. This is an Android/iOS development application. Imp
 
 ## Validation and reproducibility
 
-The [build report](BUILD_STATUS.md) is authoritative for completed runs. The older all-green baseline built both Android APK variants, iOS simulator and unsigned iOS device release, with thirteen Flutter tests. Subsequent recovery work has executed twenty-two Flutter tests, Android native integration (five cases), and native platform builds; the latest engineering changes require their own final run and must not inherit an older revision's green status.
+[GitHub Actions run 42335247077](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/42335247077) passed **all five jobs** for application source `4a7ae5f73fb457ac953d3e04cbface22ee22d726`: strict analysis, **27 Flutter tests**, **8 Python tests**, Android debug/optimized development APKs, **5 Android native integration cases**, iOS simulator build with **4 native cases passed/1 Android-only case skipped**, unsigned iOS device release and PDF-writer validation. The [build report](BUILD_STATUS.md) records exact evidence, downloads and memory-sampling limitations. Documentation-only commits do not change that tested application source.
 
 Local execution includes repository checks, eight Python regression tests, source formatting/parsing and the actual Kotlin PDF writer compiled on Java 17/Kotlin 2.1. Independent PyMuPDF checks cover three-/fifty-page output, ordering, page geometry, Unicode metadata, xref offsets and incomplete-output handling. Local source parsing is **not** Flutter type checking.
 

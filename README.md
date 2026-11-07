@@ -6,11 +6,11 @@ A local-first **Flutter Android/iOS app** for turning paper and photos into mult
 
 - Automatic document scanning: **ML Kit** on Android, **VisionKit** on iOS.
 - Manual camera fallback and multi-image import.
-- Durable drafts, page reordering/removal/retake, four-corner perspective crop, rotation and filters.
+- Multiple durable/resumable drafts, drag/accessibility ordering, removal/undo and in-place retake even at fifty pages; four-corner crop, rotation and filters.
 - A4 / Letter / image-fit export, margins, orientation and quality presets.
 - PDF and processed-image saving; optional original-image copies.
 - Android local-folder selection through SAF; iOS Files-visible Documents container.
-- Native export progress/cancellation, recovery journal and commit receipts.
+- Native export progress/cancellation, capture/export receipts, recoverable rename/delete intents and conservative cleanup.
 - Document search/sort, grid/list, in-app PDF preview, share, rename and delete.
 - Light/dark modes, defaults, basic storage cleanup.
 - Optional **Firebase Crashlytics + Analytics**, off by default and not connected to a project yet.
@@ -28,7 +28,9 @@ flutter run
 
 The native projects are included—do not regenerate them with `flutter create .`.
 
-**Development build, not store-ready.** Real GitHub Actions builds passed: Android debug and optimized development APKs, iOS simulator and unsigned release compilation, Flutter analysis/tests, and native PDF writer checks. See [verified build results and downloads](docs/BUILD_STATUS.md) for current Android/iOS outcomes. Local SDK installation is blocked by workspace download restrictions, and no physical-device run is claimed. Production signing and device qualification remain necessary; see [implementation status](docs/IMPLEMENTATION.md).
+**Development build, not store-ready.** The latest GitHub Actions run passed all five jobs: Android debug/optimized development APKs, iOS simulator/unsigned-release compilation, strict analysis, **27 Flutter tests**, **5 Android native integration cases**, **4 iPhone-simulator cases** (1 Android-only skip), Python regressions and native PDF-writer checks. See [verified build results and downloads](docs/BUILD_STATUS.md) for current Android/iOS outcomes. Local SDK installation is blocked by workspace download restrictions, and no physical-device run is claimed. Production signing and device qualification remain necessary; see [implementation status](docs/IMPLEMENTATION.md).
+
+**[Download the optimized Android development APK](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/42335247077/artifacts/13559024471)** — extract `app-release.apk`. This is a development-signed test build, not a Play release. Apple signing is still required for an installable iPhone IPA.
 
 ## Where files go
 

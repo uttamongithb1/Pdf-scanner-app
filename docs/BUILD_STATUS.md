@@ -1,86 +1,100 @@
 # Verified Android and iOS build results
 
-Updated: **7 November 2026**. This is a compiled **development app**, not a store-qualified production release.
+Updated **7 November 2026**. This is a compiled and emulator/simulator-tested **development app**, not a store-qualified production release.
 
-## Recovery/release-safety follow-up — validation in progress
+## Latest all-green build
 
-The November work adds durable capture/mutation recovery, multi-draft resume, page dragging, conservative cleanup, signing protection, privacy-consent fixes and additional native tests. It is **not** covered by the older all-green baseline below.
+**All five jobs passed** in [GitHub Actions run 42335247077](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/42335247077).
 
-[Run 42333515530](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/42333515530), source `0e3796fd7e1b80ddc4f9fbded892b84be21b18d0`, has passed Android debug/development-release builds, all five Android API 35 native integration cases and the PDF-writer job. All twenty-two Flutter tests passed; shared analysis found one missing-braces lint, now fixed in the working source. The iOS simulator debug build passed; its unbounded simulator integration attempt was superseded/cancelled without a runtime verdict. Do not count a compiled simulator app as a successful runtime test.
-
-The latest changes additionally include bounded native-test timeouts, stronger filter/rotation/crop assertions, camera retake at the fifty-page limit, consent regressions, a negative signing test and sampled emulator memory artifacts. [Run 42334885293](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/42334885293), source `e69ebd5d01b76847f97c85ec364e7928597cc304`, executed **all twenty-seven Flutter tests successfully**. Analysis/native integration found a missed fixture argument and a redundant import in the integration test itself; both are fixed in the next source revision. Do not count that run as all green. Local repository/parser checks and eight Python tests pass. Final native validation is pending.
-
-## Historical all-green baseline
-
-**All four jobs passed** in [GitHub Actions run 38719406316](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/38719406316).
-
-- Validated application source: `2c9d72b40f7ea55b27820f94c77d97d4fec24636`.
+- Validated application source: `4a7ae5f73fb457ac953d3e04cbface22ee22d726`.
 - Branch: `arena/dd30c98a-pdf-scanner-app`; main was not changed.
-- Flutter 3.35.7 / Dart 3.9, Java 17 on Linux for Android, macOS/Xcode for iOS.
-- This is historical baseline evidence, **not** validation of subsequent application changes.
+- Flutter **3.35.7** / Dart **3.9**, Java **17** on Linux for Android, macOS/Xcode for iOS.
+- Subsequent documentation-only updates do not change that tested application source.
 
-| Check | Actual result |
+| Check | Executed result |
 |---|---|
-| Locked dependency resolution (`flutter pub get --enforce-lockfile`) | Passed |
-| Strict `flutter analyze` | **No issues found**; informational findings are no longer ignored |
-| Flutter unit/widget tests with coverage | **13 tests passed** |
-| Python asset/lock-transfer regression tests | **8 tests passed** |
+| Locked Flutter dependency resolution | Passed |
+| Strict `flutter analyze` | **No issues found** |
+| Flutter unit/widget tests with coverage | **27 passed**, including retake at fifty pages, cancellation, capture replay, draft recovery and reporting-consent regressions |
+| Python asset/lock-transfer regression tests | **8 passed** |
 | Repository/platform/privacy-default checks | Passed |
 | Android debug APK | Built and uploaded |
-| Android optimized release-mode APK | Built and uploaded; **development/debug signed** |
+| Android optimized release-mode APK | Built and uploaded, **53.7 MB**, explicitly development/debug signed |
+| Unconfigured production-signing negative test | Passed: release rejected without private signing or explicit development override |
+| Android API 35 x86_64 emulator native integration | **5 passed** |
 | iOS simulator debug app | Built and uploaded |
-| iOS device release compilation (`--no-codesign`) | Passed; **unsigned, not installable on an iPhone** |
-| Actual Kotlin PDF writer + independent 3/50-page PDF parsing/rendering | Passed |
+| iPhone 16 Pro simulator native integration | **4 passed, 1 Android-only case explicitly skipped** |
+| iOS device release compilation (`--no-codesign`) | Passed, **24.4 MB**; unsigned and not installable on an iPhone |
+| Actual Kotlin JPEG PDF writer plus independent PDF parsing/rendering | Passed, including three-/fifty-page output |
 | iOS Podfile.lock unchanged after native builds | Passed |
+
+### Native scenarios actually exercised
+
+- Synthetic image staging; Original/Enhanced/Greyscale/B&W previews; greyscale/B&W pixel-channel assertions; exact 0/90/180/270-degree dimensions; invalid quadrilateral rejection.
+- PDF generation, page rendering, idempotent rename and delete with deletion acknowledgement.
+- Fifty-page export and last-page rendering; induced real SQLite commit failure, transactional rollback and successful retry.
+- Corrupt image input rolls back an already partially staged batch.
+- Maintenance removes old unreferenced previews while preserving referenced ones.
+- Android additionally replays persisted rename and partial-delete crash windows. This is simulated journal replay, **not proof of real OS process-kill handling**.
+
+An earlier iOS simulator attempt stalled and was superseded without a runtime verdict. The final run establishes a Flutter surface before offscreen image work, bounds native test timeouts and passes the actual iPhone-simulator cases. Earlier analysis/fixture compilation findings were corrected and rerun rather than declared passing.
 
 ## Downloads
 
-Sign in to GitHub if prompted. Each download is an artifact ZIP containing the APK or tarball. Actions artifacts have limited retention; use the build guide to rebuild if expired.
+Sign in to GitHub if prompted. Downloads are artifact ZIPs containing an APK or tarball. Artifacts expire; rebuild using [BUILD.md](BUILD.md) if necessary.
 
-- **[Download optimized Android development APK](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/38719406316/artifacts/11963399730)** — extract `app-release.apk`. ZIP about 24 MiB; APK about 54 MB. It is optimized/AOT-compiled but debug signed, **not Play-ready**.
-- [Android debug APK](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/38719406316/artifacts/11963379430) — extract `app-debug.apk`.
-- [iOS simulator app](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/38719406316/artifacts/11964258870) — extract `ios-simulator-app.tar.gz` on a compatible Mac. The tarball preserves framework symlinks and executable permissions. This is **not an iPhone IPA**.
-- [Resolved Flutter package lock](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/38719406316/artifacts/11964625645).
+- **[Optimized Android development APK](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/42335247077/artifacts/13559024471)** — extract `app-release.apk`. ZIP **25,295,867 bytes**; APK approximately **53.7 MB**. AOT compiled but debug signed: **not Play-ready**.
+- [Android debug APK](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/42335247077/artifacts/13559451668) — extract `app-debug.apk`.
+- [iOS simulator app](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/42335247077/artifacts/13559526601) — extract `ios-simulator-app.tar.gz` on a compatible Mac. The tarball preserves executable permissions/framework symlinks. **Not an iPhone IPA.**
+- [Android native-memory sampling report](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/42335247077/artifacts/13559431710).
+- [Resolved Flutter package lock](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/42335247077/artifacts/13558948753).
 
-SHA-256 of the optimized Android **artifact ZIP**, as reported by GitHub (not the extracted APK):
+SHA-256 of the optimized Android **artifact ZIP**, reported by GitHub, not the extracted APK:
 
 ```text
-757f58ca2409bc44a44ccfe0d62908335caf037ff1e74cde2932857f0dc30046
+94b72af09be65c3a56d9d7c09e5560da75130d37c1d804e347f5b8c478bf02f5
 ```
 
-To install the extracted APK on a connected Android 8.0+ phone from a machine with platform-tools:
+Install the extracted APK on an Android 8.0+ device using platform-tools:
 
 ```sh
 adb install -r app-release.apk
 ```
 
-Alternatively, transfer the APK to your Android phone, open it, and allow installation from that source when Android prompts. If an older development APK used a different signing key, Android may reject an update. Uninstalling removes app-private drafts/data: retain important exported files independently first.
+Alternatively, transfer the APK to the phone and open it, allowing installation from that source when Android prompts. A different development signing key can prevent updating an older installation. **Uninstalling removes private drafts/data**: independently retain important exported files before uninstalling.
 
-## Dependency lock provenance
+## Memory evidence — deliberately limited
 
-Both checked-in locks were retrieved from the final successful run, with chunk-completeness and SHA-256 verification. The Cupertino icon dependency was initially pinned using Flutter 3.35.7's official workspace lock entry, then verified and re-emitted by real CI package resolution.
+The final Android integration report contains **2 whole-app emulator/debug samples**:
 
-| File | SHA-256 of CI-verified contents |
+| Measurement | Maximum sampled value |
+|---|---:|
+| Total app PSS | **237,523 KiB** |
+| Total app RSS | **356,488 KiB** |
+
+These are not Dart-heap-only values. They are also **not true peak memory, not per-scenario attribution, and not a release/physical-phone benchmark**. Two-second sampling misses short peaks; hosted scanner process memory is excluded. The fifty-page fixture repeats a small synthetic image, not fifty high-resolution camera photographs. Do not use these figures to claim the PRD's real-device memory/latency targets are qualified.
+
+## Dependency locks
+
+Both checked-in locks match the resolved graph used by the final passing builds. Public locks were originally transferred with bounded chunks and SHA-256 integrity checks; no credentials or private configuration were exported.
+
+| File | SHA-256 |
 |---|---|
 | `pubspec.lock` | `c3fa7e7d69b342c6707807100db4f37d04597585755cf28e7f1236d576a48dfc` |
 | `ios/Podfile.lock` | `714ce0739c406d5b6e79dfd105292c57c34869097e7bc5d772432fa7df16a1b1` |
 
-Build findings were addressed rather than treating authored source as a completed build: three empty launch images were repaired, multiline Dart control-flow lint findings and a redundant import were fixed, the required Cupertino font was bundled, and Flutter package/plugin regeneration was restored between debug/release build modes to avoid a stale integration-test plugin registration.
+## Workspace versus remote execution
 
-## Workspace installation and execution limits
+Current local checks pass: repository metadata/import/privacy checks, source parsing of twenty-six Dart/Kotlin/Swift files and eight Python regressions. Formatting was applied with the Dart WASM formatter. The actual Kotlin PDF writer has also been executed with an independent PDF parser in earlier workspace validation and again in the final remote CI job.
 
-The Linux workspace contains a Flutter 3.35.7 **source checkout** and working test-only Java 17 runtime/Kotlin 2.1/Python tools. It does **not** contain a working Flutter/Dart binary SDK, full JDK, Android SDK/adb or Xcode.
+This restricted Linux workspace cannot run the full Flutter/Android SDK or Xcode. Download hosts for the mobile toolchains are blocked; caches are ephemeral. **Actual Flutter analysis/tests, Android compilation/emulation and iOS compilation/simulator execution above ran on GitHub-hosted Linux/Mac runners.** Source parsing was never substituted for those executions. Actions artifact downloads redirect to a blob host blocked from this workspace; open the browser download links above instead.
 
-Official SDK/package downloads and Actions blob downloads are blocked by this workspace's network policy. Full local SDK installation therefore could not be completed. Actual Android compilation ran on GitHub-hosted Linux and iOS compilation on a GitHub-hosted Mac; open artifact links in your browser to download them. Android emulator integration has since executed remotely as noted above; no physical-phone capture or real-device performance run is claimed. The iPhone simulator runtime result must be recorded separately from its build.
+## Remaining release gates
 
-The actual JVM PDF writer was also compiled and executed locally; structural checks, source parsing and the eight Python regression tests pass locally. Parser checks were not substituted for the real remote Flutter/native compilation.
+- Protected Android production signing and final application ID; Apple team/provisioning for an installable iPhone build or App Store IPA. Development signing is not production signing.
+- Physical-device camera/offline-fallback/SAF/Files tests, actual process kills, low-storage behaviour, independent PDF readers, accessibility and high-resolution fifty-page release/profile performance: [device acceptance plan](DEVICE_TEST_PLAN.md).
+- English-first scope remains explicit. Full externalised localisation/Hindi, full RTL/screen-reader qualification and visual goldens are unfinished product/QA work, not features proven by these tests.
+- Optional Firebase remains unconfigured/default-off. An owner-configured build requires consent/network audit, symbol uploads and accurate disclosures before distribution.
+- Final store SDK/licence/privacy/backup review and brand approval. See [implementation boundaries](IMPLEMENTATION.md).
 
-## Remaining release requirements
-
-- Configure a protected Android signing key before Play distribution. Both APK variants above are development signed.
-- Apple signing/provisioning is required for an installable iPhone build or App Store IPA. Unsigned compilation alone cannot provide one.
-- Execute [the device test plan](DEVICE_TEST_PLAN.md), including capture, gallery, SAF/Files, storage exhaustion, cancellation/process death, accessibility and 50-page performance.
-- Firebase remains unconfigured and reporting is off by default; attach a developer-owned project only if wanted.
-- Remaining product scope and physical-device/privacy gates are documented in [implementation status](IMPLEMENTATION.md). Successful compilation does not qualify those acceptance criteria.
-
-See [BUILD.md](BUILD.md) for toolchain setup, exact rebuild commands and platform-specific limitations.
+**No physical-device performance qualification, signed iPhone IPA or store-ready release is claimed.**
