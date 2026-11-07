@@ -30,7 +30,15 @@ The native projects are included—do not regenerate them with `flutter create .
 
 **Development build, not store-ready.** The latest GitHub Actions run passed all five jobs: Android debug/optimized development APKs, iOS simulator/unsigned-release compilation, strict analysis, **27 Flutter tests**, **5 Android native integration cases**, **4 iPhone-simulator cases** (1 Android-only skip), Python regressions and native PDF-writer checks. See [verified build results and downloads](docs/BUILD_STATUS.md) for current Android/iOS outcomes. Local SDK installation is blocked by workspace download restrictions, and no physical-device run is claimed. Production signing and device qualification remain necessary; see [implementation status](docs/IMPLEMENTATION.md).
 
-**[Download the optimized Android development APK](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/42335247077/artifacts/13559024471)** — extract `app-release.apk`. This is a development-signed test build, not a Play release. Apple signing is still required for an installable iPhone IPA.
+## Public preview downloads
+
+**[Open GitHub Release v0.1.0-preview.1](https://github.com/uttamongithb1/Pdf-scanner-app/releases/tag/v0.1.0-preview.1)**
+
+- **[Android APK — direct download](https://github.com/uttamongithb1/Pdf-scanner-app/releases/download/v0.1.0-preview.1/pdf-scanner-v0.1.0-preview.1-android.apk)**: Android 8.0+, approximately 53.7 MB. Open the downloaded APK to install. Development/debug signed, not a production Play release.
+- **[iOS simulator archive — Mac only](https://github.com/uttamongithb1/Pdf-scanner-app/releases/download/v0.1.0-preview.1/pdf-scanner-v0.1.0-preview.1-ios-simulator.tar.gz)**: **NOT an IPA and cannot be installed on an iPhone/iPad**. Apple signing and TestFlight/App Store distribution are not configured.
+- The release includes installation instructions, `SHA256SUMS.txt` and build provenance. These are direct release assets, not expiring Actions ZIP downloads.
+
+This is a **pre-release**. Keep independent copies of important documents. Updating a development-signed installation may require uninstalling, which deletes app-private drafts/files.
 
 ## Where files go
 
