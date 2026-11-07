@@ -141,7 +141,7 @@ class SettingsScreen extends ConsumerWidget {
           title: const Text('Share crash diagnostics'),
           subtitle: Text(
             c.monitoring.available
-                ? 'Optional technical reports. Never document content or file names.'
+                ? 'Optional technical reports through Firebase. Documents are not uploaded.'
                 : 'Not connected in this build. Firebase setup is required.',
           ),
           value: c.diagnostics,
@@ -151,9 +151,9 @@ class SettingsScreen extends ConsumerWidget {
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
-          title: const Text('Share anonymous usage events'),
+          title: const Text('Share usage events'),
           subtitle: const Text(
-            'Optional scan/export/share counts. No document data.',
+            'Optional usage counts. Firebase may use app identifiers; no document content.',
           ),
           value: c.analytics,
           onChanged: c.monitoring.available && !c.consentUpdating

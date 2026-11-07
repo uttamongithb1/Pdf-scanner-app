@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter/foundation.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -250,7 +249,7 @@ void main() {
     'corrupt decoder input rolls back a partially staged batch',
     (tester) async {
       final sourceId = const Uuid().v4();
-      final source = (await fixture(sourceId)).first;
+      final source = (await fixture(sourceId, tester)).first;
       final bad = File(
         '${(await getTemporaryDirectory()).path}/invalid-${const Uuid().v4()}.jpg',
       );
