@@ -39,7 +39,16 @@ Updated **7 November 2026**. This is a compiled and emulator/simulator-tested **
 
 An earlier iOS simulator attempt stalled and was superseded without a runtime verdict. The final run establishes a Flutter surface before offscreen image work, bounds native test timeouts and passes the actual iPhone-simulator cases. Earlier analysis/fixture compilation findings were corrected and rerun rather than declared passing.
 
-## Downloads
+## Published GitHub preview
+
+[Release v0.1.0-preview.1](https://github.com/uttamongithb1/Pdf-scanner-app/releases/tag/v0.1.0-preview.1) is public, with a directly installable **development-signed Android APK**, a clearly labelled **Mac/iOS-simulator-only archive**, `INSTALL.md`, `SHA256SUMS.txt` and `BUILD_PROVENANCE.json`. No installable iPhone IPA is available.
+
+[Publisher run 42358470102](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/42358470102) passed. It verified the pinned successful source/run/artifact IDs and digests, confirmed that application sources match merged main commit `d76898ec789501380f9e03df1cc755d3f8733cb9`, checked APK/simulator structure and uploaded every asset before publishing the pre-release. Fifteen Python regressions now include release-publisher safety tests. Application binaries are unchanged from the validated build below.
+
+- [Direct Android APK](https://github.com/uttamongithb1/Pdf-scanner-app/releases/download/v0.1.0-preview.1/pdf-scanner-v0.1.0-preview.1-android.apk): **53,687,854 bytes**, no ZIP extraction required.
+- [iOS simulator archive](https://github.com/uttamongithb1/Pdf-scanner-app/releases/download/v0.1.0-preview.1/pdf-scanner-v0.1.0-preview.1-ios-simulator.tar.gz): **53,674,583 bytes**, not usable on an iPhone/iPad.
+
+## Original Actions downloads
 
 Sign in to GitHub if prompted. Downloads are artifact ZIPs containing an APK or tarball. Artifacts expire; rebuild using [BUILD.md](BUILD.md) if necessary.
 
