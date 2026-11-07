@@ -6,6 +6,7 @@ import '../core/models.dart';
 import 'editor.dart';
 import 'export.dart';
 import 'theme.dart';
+import 'page_reorder.dart';
 
 class ReviewScreen extends ConsumerWidget {
   const ReviewScreen({super.key});
@@ -50,7 +51,7 @@ class ReviewScreen extends ConsumerWidget {
                       const SizedBox(width: 8),
                       const Expanded(
                         child: Text(
-                          'Tap a page to edit. Use its menu to move or retake.',
+                          'Tap to edit. Hold and drag to reorder, or use the page menu.',
                         ),
                       ),
                     ],
@@ -73,172 +74,200 @@ class ReviewScreen extends ConsumerWidget {
                       itemCount: pages.length,
                       itemBuilder: (context, index) {
                         final p = pages[index];
-                        return Card(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.surfaceContainerLow,
-                          clipBehavior: Clip.antiAlias,
-                          child: Column(
-                            children: [
-                              Expanded(
-                                child: InkWell(
-                                  onTap: () => _edit(context, ref, index),
-                                  child: Semantics(
-                                    label:
-                                        'Edit page ${index + 1} of ${pages.length}',
-                                    button: true,
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(12),
-                                      child: Image.file(
-                                        File(p.thumb),
-                                        cacheWidth: 512,
-                                        fit: BoxFit.contain,
-                                        errorBuilder: (_, _, _) => const Icon(
-                                          Icons.broken_image_outlined,
+                        return PageReorderTile(
+                          key: ValueKey(p.id),
+                          id: p.id,
+                          label: 'Page ${index + 1}',
+                          enabled:
+                              !c.busy &&
+                              !c.exporting &&
+                              c.pendingCommit == null,
+                          onMove: (source) => report(context, () async {
+                            final current = List<PageAsset>.of(
+                              c.draft?.pages ?? [],
+                            );
+                            final from = current.indexWhere(
+                              (page) => page.id == source,
+                            );
+                            final to = current.indexWhere(
+                              (page) => page.id == p.id,
+                            );
+                            if (from >= 0 && to >= 0) {
+                              await c.updatePages(moved(current, from, to));
+                            }
+                          }),
+                          child: Card(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerLow,
+                            clipBehavior: Clip.antiAlias,
+                            child: Column(
+                              children: [
+                                Expanded(
+                                  child: InkWell(
+                                    onTap: () => _edit(context, ref, index),
+                                    child: Semantics(
+                                      label:
+                                          'Edit page ${index + 1} of ${pages.length}',
+                                      button: true,
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(12),
+                                        child: Image.file(
+                                          File(p.thumb),
+                                          cacheWidth: 512,
+                                          fit: BoxFit.contain,
+                                          errorBuilder: (_, _, _) => const Icon(
+                                            Icons.broken_image_outlined,
+                                          ),
                                         ),
                                       ),
                                     ),
                                   ),
                                 ),
-                              ),
-                              Row(
-                                children: [
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      'Page ${index + 1}',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
+                                Row(
+                                  children: [
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        'Page ${index + 1}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  PopupMenuButton<String>(
-                                    tooltip: 'Actions for page ${index + 1}',
-                                    onSelected: (value) => report(
-                                      context,
-                                      () async {
-                                        if (value == 'edit') {
-                                          await _edit(context, ref, index);
-                                          return;
-                                        }
-                                        if (value == 'up' || value == 'down') {
-                                          await c.updatePages(
-                                            moved(
-                                              pages,
-                                              index,
-                                              value == 'up'
-                                                  ? index - 1
-                                                  : index + 1,
-                                            ),
-                                          );
-                                        }
-                                        if (value == 'remove') {
-                                          await c.updatePages(
-                                            [...pages]..removeAt(index),
-                                          );
-                                          if (context.mounted) {
-                                            ScaffoldMessenger.of(
-                                              context,
-                                            ).showSnackBar(
-                                              SnackBar(
-                                                content: const Text(
-                                                  'Page removed',
-                                                ),
-                                                duration: const Duration(
-                                                  seconds: 8,
-                                                ),
-                                                action: SnackBarAction(
-                                                  label: 'Undo',
-                                                  onPressed: () => report(
-                                                    context,
-                                                    () async {
-                                                      final now =
-                                                          List<PageAsset>.of(
-                                                            c.draft?.pages ??
-                                                                [],
-                                                          );
-                                                      if (now.any(
-                                                        (e) => e.id == p.id,
-                                                      )) {
-                                                        return;
-                                                      }
-                                                      now.insert(
-                                                        index
-                                                            .clamp(
-                                                              0,
-                                                              now.length,
-                                                            )
-                                                            .toInt(),
-                                                        p,
-                                                      );
-                                                      await c.updatePages(now);
-                                                    },
-                                                  ),
-                                                ),
+                                    PopupMenuButton<String>(
+                                      tooltip: 'Actions for page ${index + 1}',
+                                      onSelected: (value) => report(
+                                        context,
+                                        () async {
+                                          if (value == 'edit') {
+                                            await _edit(context, ref, index);
+                                            return;
+                                          }
+                                          if (value == 'up' ||
+                                              value == 'down') {
+                                            await c.updatePages(
+                                              moved(
+                                                pages,
+                                                index,
+                                                value == 'up'
+                                                    ? index - 1
+                                                    : index + 1,
                                               ),
                                             );
                                           }
-                                        }
-                                        if (value == 'retake') {
-                                          final before = List<PageAsset>.of(
-                                            c.draft!.pages,
-                                          );
-                                          await c.capture(manual: true);
-                                          final after = c.draft!.pages;
-                                          if (after.length > before.length) {
-                                            final replacement = after.last;
-                                            final next = [...before];
-                                            next[index] = replacement;
-                                            await c.updatePages(next);
+                                          if (value == 'remove') {
+                                            await c.updatePages(
+                                              [...pages]..removeAt(index),
+                                            );
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                SnackBar(
+                                                  content: const Text(
+                                                    'Page removed',
+                                                  ),
+                                                  duration: const Duration(
+                                                    seconds: 8,
+                                                  ),
+                                                  action: SnackBarAction(
+                                                    label: 'Undo',
+                                                    onPressed: () => report(
+                                                      context,
+                                                      () async {
+                                                        final now =
+                                                            List<PageAsset>.of(
+                                                              c.draft?.pages ??
+                                                                  [],
+                                                            );
+                                                        if (now.any(
+                                                          (e) => e.id == p.id,
+                                                        )) {
+                                                          return;
+                                                        }
+                                                        now.insert(
+                                                          index
+                                                              .clamp(
+                                                                0,
+                                                                now.length,
+                                                              )
+                                                              .toInt(),
+                                                          p,
+                                                        );
+                                                        await c.updatePages(
+                                                          now,
+                                                        );
+                                                      },
+                                                    ),
+                                                  ),
+                                                ),
+                                              );
+                                            }
                                           }
-                                        }
-                                      },
+                                          if (value == 'retake') {
+                                            final before = List<PageAsset>.of(
+                                              c.draft!.pages,
+                                            );
+                                            await c.capture(manual: true);
+                                            final after = c.draft!.pages;
+                                            if (after.length > before.length) {
+                                              final replacement = after.last;
+                                              final next = [...before];
+                                              next[index] = replacement;
+                                              await c.updatePages(next);
+                                            }
+                                          }
+                                        },
+                                      ),
+                                      itemBuilder: (_) => [
+                                        const PopupMenuItem(
+                                          value: 'edit',
+                                          child: Text('Edit page'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'up',
+                                          enabled: index > 0,
+                                          child: const Text('Move earlier'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'down',
+                                          enabled: index < pages.length - 1,
+                                          child: const Text('Move later'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'retake',
+                                          enabled: pages.length < maxPages,
+                                          child: const Text(
+                                            'Retake with camera',
+                                          ),
+                                        ),
+                                        const PopupMenuItem(
+                                          value: 'remove',
+                                          child: Text('Remove page'),
+                                        ),
+                                      ],
                                     ),
-                                    itemBuilder: (_) => [
-                                      const PopupMenuItem(
-                                        value: 'edit',
-                                        child: Text('Edit page'),
-                                      ),
-                                      PopupMenuItem(
-                                        value: 'up',
-                                        enabled: index > 0,
-                                        child: const Text('Move earlier'),
-                                      ),
-                                      PopupMenuItem(
-                                        value: 'down',
-                                        enabled: index < pages.length - 1,
-                                        child: const Text('Move later'),
-                                      ),
-                                      PopupMenuItem(
-                                        value: 'retake',
-                                        enabled: pages.length < maxPages,
-                                        child: const Text('Retake with camera'),
-                                      ),
-                                      const PopupMenuItem(
-                                        value: 'remove',
-                                        child: Text('Remove page'),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.only(
-                                  left: 12,
-                                  right: 12,
-                                  bottom: 12,
+                                  ],
                                 ),
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Text(
-                                    filterLabels[filters.indexOf(p.filter)],
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                    left: 12,
+                                    right: 12,
+                                    bottom: 12,
+                                  ),
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      filterLabels[filters.indexOf(p.filter)],
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         );
                       },

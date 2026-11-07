@@ -36,6 +36,8 @@ jobs:
           path: pubspec.lock
           if-no-files-found: ignore
   android:
+    env:
+      LUMEN_ALLOW_DEBUG_SIGNING: "true"
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
@@ -105,3 +107,35 @@ jobs:
       - run: npm install --prefix /tmp/kotlin kotlin-compiler@2.1.0
       - run: python3 -m pip install Pillow==11.3.0 PyMuPDF==1.26.5
       - run: KOTLINC=/tmp/kotlin/node_modules/kotlin-compiler/bin/kotlinc python3 scripts/pdf_smoke.py
+
+  android-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      LUMEN_ALLOW_DEBUG_SIGNING: "true"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            android/**/*.gradle*
+            android/gradle/wrapper/gradle-wrapper.properties
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.7'
+          channel: stable
+          cache: true
+      - run: python3 scripts/ci_run.py flutter pub get --enforce-lockfile
+      - name: Enable emulator acceleration
+        run: sudo chmod 666 /dev/kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: python3 scripts/ci_run.py flutter test integration_test/native_flow_test.dart --reporter expanded

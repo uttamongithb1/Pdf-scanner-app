@@ -58,6 +58,33 @@ class SettingsScreen extends ConsumerWidget {
         const SectionLabel('Files stay with you'),
         ListTile(
           contentPadding: EdgeInsets.zero,
+          leading: Icon(c.needsRecovery ? Icons.warning_amber : Icons.restore),
+          title: const Text('Recover file operations'),
+          subtitle: Text(
+            c.needsRecovery
+                ? 'Reconnect your selected storage, then retry. Your recovery records are kept.'
+                : 'Check interrupted renames, deletions and export rollback.',
+          ),
+          trailing: const Icon(Icons.refresh),
+          onTap: c.busy || c.exporting
+              ? null
+              : () => report(context, () async {
+                  await c.retryRecovery();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          c.needsRecovery
+                              ? 'Storage is still unavailable. Recovery records were kept.'
+                              : 'File operations recovered.',
+                        ),
+                      ),
+                    );
+                  }
+                }),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.folder_outlined),
           title: const Text('Library location'),
           subtitle: Text(c.location),
@@ -126,7 +153,7 @@ class SettingsScreen extends ConsumerWidget {
           child: Padding(
             padding: EdgeInsets.all(16),
             child: Text(
-              'No account. No ads. No document uploads.\n\nAutomatic scanner components may be downloaded by platform services. Your device backup and apps you share to follow their own privacy settings.',
+              'No account. No ads. No document uploads.\n\nAutomatic scanner components may be downloaded by platform services. App-owned data is excluded from automatic backup. Copies you share elsewhere follow the destination app’s privacy settings.',
             ),
           ),
         ),

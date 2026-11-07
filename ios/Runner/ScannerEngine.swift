@@ -32,6 +32,12 @@ final class ScannerEngine: NSObject, FlutterStreamHandler, VNDocumentCameraViewC
         documents = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         super.init()
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for directory in [root, documents] {
+            var url = directory
+            var values = URLResourceValues(); values.isExcludedFromBackup = true
+            try url.setResourceValues(values)
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: url.path)
+        }
         channel.setMethodCallHandler { [weak self] call, result in self?.handle(call, result) }
         events.setStreamHandler(self)
     }
@@ -60,7 +66,9 @@ final class ScannerEngine: NSObject, FlutterStreamHandler, VNDocumentCameraViewC
             do {
                 let value: Any?
                 switch call.method {
-                case "initialise": value = try self.initialise()
+                case "initialise", "retryRecovery": value = try self.initialise()
+                case "acknowledgeDeletion": try self.acknowledgeDeletion(a["id"] as! String); value = nil
+                case "maintenance": self.maintenance(a); value = nil
                 case "stage": value = try self.stage(a)
                 case "preview": value = try self.preview(a)
                 case "export": value = try self.export(a)
@@ -106,12 +114,19 @@ final class ScannerEngine: NSObject, FlutterStreamHandler, VNDocumentCameraViewC
             }
             if clean { try? FileManager.default.removeItem(at: job) }
         }
+        var recovery: [[String: String]] = []
+        let mutations = (try? FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("mutations"), includingPropertiesForKeys: nil)) ?? []
+        for file in mutations where file.pathExtension == "json" {
+            do { _ = try finishMutation(file) } catch { recovery.append(["id": file.deletingPathExtension().lastPathComponent, "kind": "fileOperation"]) }
+        }
+        let remainingJobs = (try? FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("jobs"), includingPropertiesForKeys: nil)) ?? []
+        for job in remainingJobs { recovery.append(["id": job.lastPathComponent, "kind": "exportRollback"]) }
         let files = try FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("receipts"), includingPropertiesForKeys: nil)
         let receipts: [[String: Any]] = files.filter { $0.pathExtension == "json" }.compactMap { url in
             guard let data = try? Data(contentsOf: url) else { return nil }
             return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         }
-        return ["location": "On My iPhone → PDF Scanner", "receipts": receipts]
+        return ["location": "On My iPhone → PDF Scanner", "receipts": receipts, "recovery": recovery]
     }
     private func scan(_ result: @escaping FlutterResult) {
         guard pending == nil else { result(FlutterError(code: "busy", message: nil, details: nil)); return }
@@ -349,11 +364,17 @@ final class ScannerEngine: NSObject, FlutterStreamHandler, VNDocumentCameraViewC
         let out = root.appendingPathComponent("previews/pdf-\(UUID().uuidString).jpg"); try jpeg(cg,out,quality: 0.85)
         return ["path": out.path,"count": pdf.pageCount]
     }
-    private func rename(_ a: [String: Any]) throws -> [String: Any] {
+    private func performRename(_ a: [String: Any]) throws -> [String: Any] {
         let source = try resolveUri(a["uri"] as! String),title = stem(a["newTitle"] as! String)
         let dest = source.deletingLastPathComponent().appendingPathComponent("\(title).pdf")
         guard !FileManager.default.fileExists(atPath: dest.path) else { throw ScannerFailure(code: "collision") }
-        try FileManager.default.moveItem(at: source,to: dest)
+        var coordinationError: NSError?
+        var moveError: Error?
+        NSFileCoordinator().coordinate(writingItemAt: source, options: .forMoving, writingItemAt: dest, options: [], error: &coordinationError) { from, to in
+            do { try FileManager.default.moveItem(at: from, to: to) } catch { moveError = error }
+        }
+        if let error = coordinationError { throw error }
+        if let error = moveError { throw error }
         var result = a; result.removeValue(forKey: "newTitle"); result["title"] = title; result["uri"] = relativeUri(dest)
         try saveReceipt(a["id"] as! String,result); return result
     }
@@ -361,10 +382,72 @@ final class ScannerEngine: NSObject, FlutterStreamHandler, VNDocumentCameraViewC
         let url = try resolveUri(uri)
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
     }
-    private func delete(_ a: [String: Any]) throws {
+    private func performDelete(_ a: [String: Any]) throws {
         if a["deleteImages"] as? Bool == true { for uri in a["images"] as? [String] ?? [] { try removeUri(uri) } }
         try removeUri(a["uri"] as! String)
         try? FileManager.default.removeItem(at: root.appendingPathComponent("receipts/\(safeId(a["id"] as! String)).json"))
+    }
+    private func mutationFile(_ id: String) throws -> URL { try directory(root.appendingPathComponent("mutations")).appendingPathComponent("\(safeId(id)).json") }
+    private func writeMutation(_ file: URL, _ value: [String: Any]) throws {
+        try JSONSerialization.data(withJSONObject: value).write(to: file, options: .atomic)
+    }
+    private func rename(_ a: [String: Any]) throws -> [String: Any] {
+        let file = try mutationFile(a["id"] as! String)
+        guard !FileManager.default.fileExists(atPath: file.path) else { throw ScannerFailure(code: "recovery") }
+        let source = try resolveUri(a["uri"] as! String), title = stem(a["newTitle"] as! String)
+        let target = source.deletingLastPathComponent().appendingPathComponent("\(title).pdf")
+        var after = a; after.removeValue(forKey: "newTitle"); after["title"] = title; after["uri"] = relativeUri(target)
+        if source == target { try saveReceipt(a["id"] as! String, after); return after }
+        guard !FileManager.default.fileExists(atPath: target.path) else { throw ScannerFailure(code: "collision") }
+        try writeMutation(file, ["kind": "rename", "before": a, "after": after])
+        return try finishMutation(file)
+    }
+    private func delete(_ a: [String: Any]) throws {
+        let file = try mutationFile(a["id"] as! String)
+        guard !FileManager.default.fileExists(atPath: file.path) else { throw ScannerFailure(code: "recovery") }
+        try writeMutation(file, ["kind": "delete", "before": a]); _ = try finishMutation(file)
+    }
+    private func finishMutation(_ file: URL) throws -> [String: Any] {
+        let value = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+        let before = value["before"] as! [String: Any], id = before["id"] as! String
+        let result: [String: Any]
+        if value["kind"] as? String == "delete" {
+            try performDelete(before); result = ["id": id, "deleted": true]; try saveReceipt(id, result)
+        } else {
+            let after = value["after"] as! [String: Any]
+            let source = try resolveUri(before["uri"] as! String), target = try resolveUri(after["uri"] as! String)
+            if FileManager.default.fileExists(atPath: source.path) {
+                guard !FileManager.default.fileExists(atPath: target.path) else { throw ScannerFailure(code: "collision") }
+                var request = before; request["newTitle"] = after["title"]; result = try performRename(request)
+            } else {
+                guard FileManager.default.fileExists(atPath: target.path) else { throw ScannerFailure(code: "missing") }
+                try saveReceipt(id, after); result = after
+            }
+        }
+        try FileManager.default.removeItem(at: file); return result
+    }
+    private func acknowledgeDeletion(_ id: String) throws {
+        let file = root.appendingPathComponent("receipts/\(try safeId(id)).json")
+        guard let data = try? Data(contentsOf: file), let value = try JSONSerialization.jsonObject(with: data) as? [String: Any], value["deleted"] as? Bool == true else { return }
+        try FileManager.default.removeItem(at: file)
+    }
+    private func maintenance(_ a: [String: Any]) {
+        let protected = Set(a["protectedPaths"] as? [String] ?? [])
+        let cutoff = Date().addingTimeInterval(-48 * 60 * 60)
+        for path in ["previews", "shares"] {
+            let entries = (try? FileManager.default.contentsOfDirectory(at: root.appendingPathComponent(path), includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey])) ?? []
+            for file in entries where !protected.contains(file.path) {
+                if let info = try? file.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey]), info.isRegularFile == true, let modified = info.contentModificationDate, modified < cutoff { try? FileManager.default.removeItem(at: file) }
+            }
+        }
+        let sessions = (try? FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("drafts"), includingPropertiesForKeys: nil)) ?? []
+        for session in sessions {
+            let files = (try? FileManager.default.contentsOfDirectory(at: session, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+            for file in files where file.lastPathComponent.hasPrefix("preview-") && !protected.contains(file.path) {
+                if let date = try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, date < cutoff { try? FileManager.default.removeItem(at: file) }
+            }
+        }
+        // Never automatically remove source images, drafts, journals or receipts.
     }
     private func usage() -> [String: Any] {
         func size(_ root: URL) -> Int64 {

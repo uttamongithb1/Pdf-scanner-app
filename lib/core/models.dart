@@ -166,6 +166,8 @@ class ScanFailure implements Exception {
       'This folder is unavailable. Reconnect it or choose a local folder in Settings.',
     'unsupported' =>
       'Automatic scanning is unavailable. Use the camera fallback or import photos.',
+    'recovery' =>
+      'A file operation needs recovery. Reconnect your storage and use Settings → Recover file operations before trying again.',
     'index' =>
       'Your PDF was saved, but the library could not update. Retry Save PDF or reopen the app to recover it. Do not discard the draft.',
     'limit' =>

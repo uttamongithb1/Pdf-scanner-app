@@ -20,32 +20,35 @@ class ScannerController extends ChangeNotifier {
   SavedDocument? pendingCommit;
   bool busy = false, exporting = false;
   String location = 'App storage', phase = 'Preparing…';
+  List<Map<String, dynamic>> recovery = [];
+  bool needsRecovery = false;
   int completed = 0, total = 0;
   StreamSubscription<Map<String, dynamic>>? _progress;
   Future<void> _writes = Future.value();
-  ThemeMode get theme => ThemeMode.values[prefs.getInt('theme') ?? 0];
+  ThemeMode get theme =>
+      ThemeMode.values[(prefs.getInt('theme') ?? 0).clamp(
+        0,
+        ThemeMode.values.length - 1,
+      )];
   bool get saveImages => prefs.getBool('images') ?? true;
   bool get keepOriginals => prefs.getBool('originals') ?? false;
   bool get diagnostics => prefs.getBool('diagnostics') ?? false;
   bool get analytics => prefs.getBool('analytics') ?? false;
   bool get onboarded => prefs.getBool('onboarded') ?? false;
-  int get quality => prefs.getInt('quality') ?? 1;
-  String get format => prefs.getString('format') ?? 'a4';
-  String get defaultFilter => prefs.getString('filter') ?? 'original';
+  int get quality =>
+      (prefs.getInt('quality') ?? 1).clamp(0, qualityLabels.length - 1);
+  String get format =>
+      const ['a4', 'letter', 'fit'].contains(prefs.getString('format'))
+      ? prefs.getString('format')!
+      : 'a4';
+  String get defaultFilter => filters.contains(prefs.getString('filter'))
+      ? prefs.getString('filter')!
+      : 'original';
   Future<void> initialise() async {
     final state = Map<String, dynamic>.from(
       (await platform.call<Map>('initialise'))!,
     );
-    location = state['location'] as String;
-    final receipts = (state['receipts'] as List? ?? []);
-    for (final receipt in receipts) {
-      final doc = SavedDocument(Map<String, dynamic>.from(receipt as Map));
-      await store.saveDocument(doc);
-      await store.clearDraft(doc.data['session'] as String);
-      await platform.call<void>('acknowledge', {
-        'session': doc.data['session'],
-      });
-    }
+    await _applyRecovery(state);
     documents = await store.documents();
     draft = await store.draft();
     // Android may recreate the process while the system camera is open.
@@ -64,6 +67,7 @@ class ScannerController extends ChangeNotifier {
       draft = current.withPages([...current.pages, ...staged]);
       await store.saveDraft(draft!);
     }
+    await maintainCache();
     _progress = platform.progress.listen((e) {
       phase = e['phase'] as String? ?? 'Processing…';
       completed = (e['completed'] as num?)?.toInt() ?? 0;
@@ -170,6 +174,12 @@ class ScannerController extends ChangeNotifier {
     if (draft == null || draft!.pages.isEmpty || busy || exporting) {
       throw ScanFailure('busy');
     }
+    if (quality < 0 ||
+        quality >= qualityDpi.length ||
+        !const ['a4', 'letter', 'fit'].contains(format) ||
+        !const [0, 5, 10].contains(margin)) {
+      throw ScanFailure('invalid');
+    }
     exporting = true;
     phase = 'Preparing…';
     completed = 0;
@@ -196,8 +206,7 @@ class ScannerController extends ChangeNotifier {
           });
       final doc = SavedDocument(Map<String, dynamic>.from(receipt!));
       pendingCommit = doc;
-      await store.saveDocument(doc);
-      await store.clearDraft(draft!.id);
+      await store.commitExport(doc, draft!.id);
       await platform.call<void>('acknowledge', {'session': draft!.id});
       pendingCommit = null;
       draft = null;
@@ -218,7 +227,7 @@ class ScannerController extends ChangeNotifier {
 
   Future<void> cancel() => platform.call<void>('cancel');
   Future<void> chooseFolder({bool private = false}) async {
-    if (exporting) throw ScanFailure('busy');
+    if (exporting || busy) throw ScanFailure('busy');
     location =
         (await platform.call<String>(
           private ? 'privateFolder' : 'chooseFolder',
@@ -232,24 +241,108 @@ class ScannerController extends ChangeNotifier {
     if (share) await monitoring.event('share_opened');
   }
 
-  Future<void> rename(SavedDocument doc, String title) async {
-    final result = await platform.call<Map>('rename', {
-      ...doc.data,
-      'newTitle': safeStem(title),
-    });
-    await store.saveDocument(SavedDocument(Map<String, dynamic>.from(result!)));
-    documents = await store.documents();
+  Future<void> _applyRecovery(Map<String, dynamic> state) async {
+    location = state['location'] as String? ?? location;
+    recovery = (state['recovery'] as List? ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    for (final receipt in state['receipts'] as List? ?? []) {
+      final data = Map<String, dynamic>.from(receipt as Map);
+      if (data['deleted'] == true) {
+        await store.removeDocument(data['id'] as String);
+        await platform.call<void>('acknowledgeDeletion', {'id': data['id']});
+      } else {
+        final doc = SavedDocument(data);
+        final session = data['session'] as String?;
+        if (session != null) {
+          await store.commitExport(doc, session);
+          await platform.call<void>('acknowledge', {'session': session});
+        } else {
+          await store.saveDocument(doc);
+        }
+      }
+    }
+    needsRecovery = recovery.isNotEmpty;
+  }
+
+  Future<void> retryRecovery() async {
+    if (busy || exporting) throw ScanFailure('busy');
+    busy = true;
     notifyListeners();
+    try {
+      final state = await platform.call<Map>('retryRecovery');
+      await _applyRecovery(Map<String, dynamic>.from(state!));
+      documents = await store.documents();
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> rename(SavedDocument doc, String title) async {
+    if (busy || exporting) throw ScanFailure('busy');
+    if (needsRecovery) throw ScanFailure('recovery');
+    busy = true;
+    notifyListeners();
+    try {
+      final result = await platform.call<Map>('rename', {
+        ...doc.data,
+        'newTitle': safeStem(title),
+      });
+      await store.saveDocument(
+        SavedDocument(Map<String, dynamic>.from(result!)),
+      );
+      documents = await store.documents();
+    } catch (_) {
+      needsRecovery = true;
+      rethrow;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
   }
 
   Future<void> delete(SavedDocument doc, {required bool images}) async {
-    await platform.call<void>('delete', {...doc.data, 'deleteImages': images});
-    await store.removeDocument(doc.id);
-    documents = await store.documents();
+    if (busy || exporting) throw ScanFailure('busy');
+    if (needsRecovery) throw ScanFailure('recovery');
+    busy = true;
     notifyListeners();
+    try {
+      await platform.call<void>('delete', {
+        ...doc.data,
+        'deleteImages': images,
+      });
+      await store.removeDocument(doc.id);
+      await platform.call<void>('acknowledgeDeletion', {'id': doc.id});
+      documents = await store.documents();
+    } catch (_) {
+      needsRecovery = true;
+      rethrow;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> maintainCache() async {
+    if (busy || exporting) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - (prefs.getInt('lastMaintenance') ?? 0) <
+        const Duration(days: 1).inMilliseconds)
+      return;
+    try {
+      await _writes;
+      await platform.call<void>('maintenance', {
+        'protectedPaths': await store.protectedPreviewPaths(),
+      });
+      await prefs.setInt('lastMaintenance', now);
+    } catch (_) {
+      /* Cleanup must never prevent opening the library. */
+    }
   }
 
   Future<void> refresh() async {
+    await maintainCache();
     documents = await store.documents();
     notifyListeners();
   }

@@ -36,6 +36,26 @@ class LocalStore {
         'body': jsonEncode(doc.data),
       }, conflictAlgorithm: ConflictAlgorithm.replace)
       .then((_) {});
+  Future<void> commitExport(SavedDocument doc, String session) async {
+    await db.transaction((tx) async {
+      await tx.insert('documents', {
+        'id': doc.id,
+        'body': jsonEncode(doc.data),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await tx.delete('drafts', where: 'id=?', whereArgs: [session]);
+    });
+  }
+
+  Future<List<String>> protectedPreviewPaths() async {
+    final rows = await db.query('drafts');
+    return [
+      for (final row in rows)
+        for (final page in Draft.fromJson(
+          Map<String, dynamic>.from(jsonDecode(row['body'] as String) as Map),
+        ).pages) ...[page.path, page.thumb],
+    ];
+  }
+
   Future<void> removeDocument(String id) =>
       db.delete('documents', where: 'id=?', whereArgs: [id]).then((_) {});
   Future<void> saveDraft(Draft d) => db

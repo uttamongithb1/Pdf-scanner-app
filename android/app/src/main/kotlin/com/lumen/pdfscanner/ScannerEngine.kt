@@ -57,7 +57,9 @@ class ScannerEngine(private val activity: Activity, messenger: BinaryMessenger):
         worker.execute {
             try {
                 val value:Any?=when(call.method) {
-                    "initialise" -> initialise()
+                    "initialise", "retryRecovery" -> initialise()
+                    "acknowledgeDeletion" -> {acknowledgeDeletion(a["id"] as String);null}
+                    "maintenance" -> {maintenance(a);null}
                     "privateFolder" -> {prefs.edit().remove("tree").apply();location()}
                     "stage" -> stage(a["session"] as String,a["paths"] as List<String>)
                     "preview" -> preview(a)
@@ -101,10 +103,15 @@ class ScannerEngine(private val activity: Activity, messenger: BinaryMessenger):
             // Keep the recovery journal if a provider is still disconnected.
             if(clean)job.deleteRecursively()
         }
+        val recovery=mutableListOf<Map<String,String>>()
+        File(root,"mutations").listFiles()?.filter {it.extension=="json"}?.forEach {file->
+            try { finishMutation(file) } catch (_:Throwable) { recovery.add(mapOf("id" to file.nameWithoutExtension,"kind" to "fileOperation")) }
+        }
+        File(root,"jobs").listFiles()?.forEach { recovery.add(mapOf("id" to it.name,"kind" to "exportRollback")) }
         val receipts=File(root,"receipts").listFiles()?.filter {it.extension=="json"}?.mapNotNull {
             runCatching {jsonMap(JSONObject(it.readText()))}.getOrNull()
         } ?: emptyList()
-        return mapOf("location" to location(),"receipts" to receipts)
+        return mapOf("location" to location(),"receipts" to receipts,"recovery" to recovery)
     }
     private fun scan(limit:Int,r:MethodChannel.Result) {
         if(pending!=null) {r.error("busy",null,null);return}
@@ -361,9 +368,9 @@ class ScannerEngine(private val activity: Activity, messenger: BinaryMessenger):
     private fun removeUri(uri:String) {
         val u=Uri.parse(uri)
         if(u.scheme=="file") {val f=File(u.path!!).canonicalFile;if(!f.path.startsWith(privateRoot().canonicalPath+File.separator))throw Failure("invalid");if(f.exists()&&!f.delete())throw Failure("delete")}
-        else {val doc=DocumentFile.fromSingleUri(activity,u) ?: throw Failure("missing");if(doc.exists()&&!doc.delete())throw Failure("delete")}
+        else {val doc=DocumentFile.fromSingleUri(activity,u) ?: throw Failure("missing");if(uriExists(uri)&&!doc.delete())throw Failure("delete")}
     }
-    private fun rename(a:Map<String,Any?>):Map<String,Any?> {
+    private fun performRename(a:Map<String,Any?>):Map<String,Any?> {
         val uri=Uri.parse(a["uri"] as String);val title=stem(a["newTitle"] as String);val name="$title.pdf"
         val newUri=if(uri.scheme=="file"){
             val from=File(uri.path!!);val target=File(from.parentFile,name);if(target.exists())throw Failure("collision");if(!from.renameTo(target))throw Failure("rename");Uri.fromFile(target).toString()
@@ -381,10 +388,91 @@ class ScannerEngine(private val activity: Activity, messenger: BinaryMessenger):
         }
         val result=a.toMutableMap().apply{remove("newTitle");put("uri",newUri);put("title",title)};saveReceipt(a["id"] as String,result);return result
     }
-    private fun delete(a:Map<String,Any?>) {
+    private fun performDelete(a:Map<String,Any?>) {
         if(a["deleteImages"]==true)(a["images"] as? List<*>)?.forEach{removeUri(it as String)}
         removeUri(a["uri"] as String)
         File(root,"receipts/${safeId(a["id"] as String)}.json").delete()
+    }
+    private fun mutationFile(id:String)=File(root,"mutations/${safeId(id)}.json")
+    private fun writeMutation(file:File,value:Map<String,Any?>) {
+        file.parentFile?.mkdirs()
+        val part=File(file.parentFile,file.name+".part")
+        part.outputStream().use {it.write(JSONObject(value).toString().toByteArray());it.fd.sync()}
+        if(!part.renameTo(file))throw Failure("write")
+    }
+    private fun uriExists(value:String):Boolean {
+        val uri=Uri.parse(value)
+        return if(uri.scheme=="file")File(uri.path!!).exists() else {
+            // A disconnected/revoked provider is an error, not proof of deletion.
+            try { activity.contentResolver.query(uri,arrayOf(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID),null,null,null)?.use {it.moveToFirst()} ?: throw Failure("folder") } catch (_:java.io.FileNotFoundException) { false }
+        }
+    }
+    private fun rename(a:Map<String,Any?>):Map<String,Any?> {
+        val file=mutationFile(a["id"] as String)
+        if(file.exists())throw Failure("recovery")
+        val uri=Uri.parse(a["uri"] as String);val title=stem(a["newTitle"] as String)
+        val after=a.toMutableMap().apply {remove("newTitle");put("title",title)}
+        val target=if(uri.scheme=="file") {
+            val from=File(uri.path!!).canonicalFile
+            if(!from.path.startsWith(privateRoot().canonicalPath+File.separator))throw Failure("invalid")
+            Uri.fromFile(File(from.parentFile,"$title.pdf"))
+        } else {
+            if(uri.authority!="com.android.externalstorage.documents")throw Failure("localFolder")
+            val oldId=android.provider.DocumentsContract.getDocumentId(uri)
+            if(!oldId.contains('/'))throw Failure("rename")
+            android.provider.DocumentsContract.buildDocumentUriUsingTree(uri,oldId.substringBeforeLast('/')+"/$title.pdf")
+        }
+        after["uri"]=target.toString()
+        if(target==uri) {saveReceipt(a["id"] as String,after);return after}
+        if(uriExists(target.toString()))throw Failure("collision")
+        writeMutation(file,mapOf("kind" to "rename","before" to a,"after" to after))
+        return finishMutation(file)!!
+    }
+    private fun delete(a:Map<String,Any?>) {
+        val file=mutationFile(a["id"] as String)
+        if(file.exists())throw Failure("recovery")
+        writeMutation(file,mapOf("kind" to "delete","before" to a))
+        finishMutation(file)
+    }
+    @Suppress("UNCHECKED_CAST")
+    private fun finishMutation(file:File):Map<String,Any?>? {
+        val value=jsonMap(JSONObject(file.readText()))
+        val before=value["before"] as Map<String,Any?>
+        val id=before["id"] as String
+        val result:Map<String,Any?>
+        if(value["kind"]=="delete") {
+            performDelete(before)
+            result=mapOf("id" to id,"deleted" to true)
+            saveReceipt(id,result)
+        } else {
+            val after=value["after"] as Map<String,Any?>
+            result=if(uriExists(before["uri"] as String)) {
+                if(uriExists(after["uri"] as String))throw Failure("collision")
+                performRename(before+("newTitle" to after["title"]))
+            } else {
+                if(!uriExists(after["uri"] as String))throw Failure("missing")
+                saveReceipt(id,after);after
+            }
+        }
+        if(!file.delete())throw Failure("write")
+        return result
+    }
+    private fun acknowledgeDeletion(id:String) {
+        val receipt=File(root,"receipts/${safeId(id)}.json")
+        if(receipt.exists() && JSONObject(receipt.readText()).optBoolean("deleted")) {
+            if(!receipt.delete())throw Failure("write")
+        }
+    }
+    private fun maintenance(a:Map<String,Any?>) {
+        val protected=(a["protectedPaths"] as? List<*>)?.map {File(it as String).canonicalPath}?.toSet() ?: emptySet()
+        val cutoff=System.currentTimeMillis()-48L*60*60*1000
+        listOf(File(root,"previews"),File(activity.cacheDir,"shares")).forEach {dir->
+            dir.listFiles()?.filter {it.isFile && it.lastModified()<cutoff && it.canonicalPath !in protected}?.forEach {it.delete()}
+        }
+        File(root,"drafts").listFiles()?.filter {it.isDirectory}?.forEach {dir->
+            dir.listFiles()?.filter {it.isFile && it.name.startsWith("preview-") && it.lastModified()<cutoff && it.canonicalPath !in protected}?.forEach {it.delete()}
+        }
+        // Never automatically remove source images, drafts, journals or receipts.
     }
     private fun usage():Map<String,Any?> {
         fun size(file:File)=file.walkTopDown().filter{it.isFile}.sumOf{it.length()}

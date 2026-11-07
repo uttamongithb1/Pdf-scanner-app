@@ -1,8 +1,26 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+val uploadProperties = Properties()
+val uploadPropertiesFile = rootProject.file("key.properties")
+if (uploadPropertiesFile.exists()) {
+    uploadPropertiesFile.inputStream().use { uploadProperties.load(it) }
+    listOf("storeFile", "storePassword", "keyAlias", "keyPassword").forEach {
+        require(!uploadProperties.getProperty(it).isNullOrBlank()) { "Missing release signing property: $it" }
+    }
+}
+val developmentSigning = System.getenv("LUMEN_ALLOW_DEBUG_SIGNING") == "true"
+
+gradle.taskGraph.whenReady {
+    if (allTasks.any { it.name.contains("Release") } && !uploadPropertiesFile.exists() && !developmentSigning) {
+        throw GradleException("Release signing is not configured. Provide private android/key.properties. For internal testing ONLY set LUMEN_ALLOW_DEBUG_SIGNING=true.")
+    }
 }
 
 android {
@@ -30,11 +48,21 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (uploadPropertiesFile.exists()) {
+            create("production") {
+                storeFile = file(uploadProperties.getProperty("storeFile"))
+                storePassword = uploadProperties.getProperty("storePassword")
+                keyAlias = uploadProperties.getProperty("keyAlias")
+                keyPassword = uploadProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (uploadPropertiesFile.exists()) signingConfigs.getByName("production")
+                else if (developmentSigning) signingConfigs.getByName("debug") else null
         }
     }
 }
