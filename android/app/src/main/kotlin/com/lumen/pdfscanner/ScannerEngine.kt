@@ -37,7 +37,14 @@ class ScannerEngine(private val activity: Activity, messenger: BinaryMessenger):
     private var pending: MethodChannel.Result? = null
     @Volatile private var exporting = false
     init { channel.setMethodCallHandler(this); eventChannel.setStreamHandler(this) }
-    override fun onListen(args: Any?, events: EventChannel.EventSink?) {sink=events}
+    override fun onListen(args: Any?, events: EventChannel.EventSink?) {
+        sink=events
+        worker.execute {
+            if(File(root,"captures").listFiles()?.any {it.extension=="json"}==true) {
+                main.post {sink?.success(mapOf("captureReady" to true))}
+            }
+        }
+    }
     override fun onCancel(args: Any?) {sink=null}
     fun close() {cancelled.set(true); pending?.error("cancelled",null,null);pending=null;channel.setMethodCallHandler(null);eventChannel.setStreamHandler(null);worker.shutdown()}
     private fun success(r: MethodChannel.Result,v:Any?) {main.post {r.success(v)}}

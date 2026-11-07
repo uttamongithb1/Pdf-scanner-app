@@ -4,8 +4,8 @@ The user requested post-launch visibility after the original local-only proposal
 
 ## Two switches, not one
 
-1. **Developer setup/build gate:** Firebase config belongs to your project, and the app starts Firebase only with `--dart-define=FIREBASE_ENABLED=true`.
-2. **User choice:** crash diagnostics and usage events are separate, default-off Settings switches. Native auto-collection flags are false before SDK initialisation. App code also gates explicit reports/events by consent.
+1. **Developer setup/build gate:** Firebase config belongs to your project, and Dart requests Firebase initialisation only with `--dart-define=FIREBASE_ENABLED=true` **and at least one saved/requested user opt-in**.
+2. **User choice:** crash diagnostics and usage events are separate, default-off Settings switches. Native collection defaults are false. Android removes FirebaseInitProvider from the merged manifest to defer the default Firebase app; app-originated reports/events also require the corresponding user consent.
 
 Without your configuration, the app remains usable; Settings shows monitoring as not connected. No project credentials, project IDs or configuration files have been invented.
 
@@ -22,7 +22,9 @@ Without your configuration, the app remains usable; Settings shows monitoring as
 flutter run --dart-define=FIREBASE_ENABLED=true
 ```
 
-Enable the desired reporting switch in the app. Test consent before/after restart, opt-out and deletion of unsent reports. Verify delivery on an internal test build. Do not deliberately crash production users to test it.
+Enable the desired reporting switch in the app. The Settings controls distinguish build availability from a successfully initialised connection, prevent concurrent consent updates and do not store a successful opt-in when connection/setup fails. Opt-out is saved before SDK work so a failing disable request cannot silently restore the preference on restart. Initialisation failure makes a best-effort attempt to disable both SDKs. Document scanning must still work when configuration is absent.
+
+**Configured Firebase builds are not privacy-qualified by these source checks.** Native plugin/SDK registration and persisted SDK collection settings can have lifecycle effects independent of Dart initialisation. Before enabling this in a distributed build, inspect traffic on fresh install, after opt-in/restart, during opt-out/failure and after reinstall; verify SDK deletion/collection behaviour and store disclosures. Verify consented delivery and symbolication on an internal build. Do not deliberately crash production users to test it.
 
 These config files are ignored by Git. Keep CI/service-account/upload credentials in protected secrets, not app code or chat. Firebase mobile configuration itself is not a replacement for proper project restrictions and security settings.
 

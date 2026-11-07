@@ -41,3 +41,16 @@ Run release/profile builds on a low-memory Android device, a mainstream Google-s
 - [ ] Validate exported PDFs with multiple independent readers, actual fonts/text stamps and image qualities; tiny/large and faint-pencil pages included.
 
 Store the report outside source control if it contains real document content. Prefer synthetic fixtures for all repeatable tests.
+
+## Additional recovery acceptance cases
+
+- [ ] Fifty-page draft → retake a middle page → remains fifty pages, same ordering, replacement saved. Cancel retake → original retained.
+- [ ] Android: kill while the retake camera is open → returned image replaces the intended page in the intended saved draft, even with multiple drafts. If that draft cannot accept the image, preserve it as a separate recovery draft.
+- [ ] Kill hosted capture after native return but before Dart persistence/ack; resume once, without duplicated pages. Recreate the Activity before Dart subscribes to capture events.
+- [ ] Persisted rename/delete intent: kill at each mutation boundary; restart/retry either completes or visibly retains unresolved evidence. Repeat with SAF permission revoked and restored.
+- [ ] Invalid/corrupt publication journal → recovery remains visible; temporary cleanup must not delete potentially published output evidence.
+- [ ] Interrupted SQLite export commit → no partial library/draft transaction; receipt retry indexes once and then clears only its own draft.
+- [ ] Cache cleanup with multiple old saved drafts → every source/edited thumbnail remains readable; genuinely old unreferenced previews are removed.
+- [ ] Reporting: configuration absent, opt-in initialisation fails, repeated simultaneous taps, persisted opt-out followed by SDK error/restart. Check UI/persisted choice and actual SDK network state separately.
+
+CI's simulated mutation journals, synthetic fifty-page fixtures and two-second debug/emulator memory samples are supporting regression evidence, **not execution of these physical-device cases**. Record exact source SHA, app build mode, phone/OS, provider, observed result and any retained recovery evidence.

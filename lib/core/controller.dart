@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,7 +11,14 @@ import 'platform.dart';
 import 'store.dart';
 
 class ScannerController extends ChangeNotifier {
-  ScannerController(this.store, this.prefs, this.platform, this.monitoring);
+  ScannerController(
+    this.store,
+    this.prefs,
+    this.platform,
+    this.monitoring, {
+    ImagePicker? imagePicker,
+  }) : imagePicker = imagePicker ?? ImagePicker();
+  final ImagePicker imagePicker;
   final LocalStore store;
   final SharedPreferences prefs;
   final ScannerPlatform platform;
@@ -22,6 +30,7 @@ class ScannerController extends ChangeNotifier {
   String location = 'App storage', phase = 'Preparing…';
   List<Map<String, dynamic>> recovery = [];
   bool needsRecovery = false;
+  bool consentUpdating = false;
   int completed = 0, total = 0;
   StreamSubscription<Map<String, dynamic>>? _progress;
   Future<void> _writes = Future.value();
@@ -53,20 +62,44 @@ class ScannerController extends ChangeNotifier {
     draft = await store.draft();
     // Android may recreate the process while the system camera is open.
     final lost = Platform.isAndroid
-        ? await ImagePicker().retrieveLostData()
+        ? await imagePicker.retrieveLostData()
         : null;
     if (lost?.files?.isNotEmpty ?? false) {
-      final current = draft ?? Draft(const Uuid().v4(), [], DateTime.now());
+      Map<String, dynamic>? replacement;
+      try {
+        final raw = prefs.getString('cameraReplacement');
+        if (raw != null) {
+          replacement = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+        }
+      } catch (_) {
+        /* A malformed intent must never destroy an existing draft. */
+      }
+      final drafts = await store.drafts();
+      var current =
+          drafts.where((d) => d.id == replacement?['session']).firstOrNull ??
+          draft ??
+          Draft(const Uuid().v4(), [], DateTime.now());
+      final pageId = replacement?['page'] is String
+          ? replacement!['page'] as String
+          : null;
+      final replace = current.pages.any((p) => p.id == pageId) ? pageId : null;
+      // Keep the full draft intact; recover an otherwise unplaceable camera result
+      // into a separate draft rather than dropping it at the fifty-page cap.
+      if (replace == null && current.pages.length >= maxPages) {
+        current = Draft(const Uuid().v4(), [], DateTime.now());
+      }
       final staged = await platform.stage(
         current.id,
         lost!.files!
-            .take(maxPages - current.pages.length)
+            .take(replace == null ? maxPages - current.pages.length : 1)
             .map((f) => f.path)
             .toList(),
       );
-      draft = current.withPages([...current.pages, ...staged]);
-      await store.saveDraft(draft!);
+      final recovered = _mergeCapture(current, staged, replacePageId: replace);
+      await store.saveDraft(recovered);
+      draft = recovered;
     }
+    await prefs.remove('cameraReplacement');
     await maintainCache();
     _progress = platform.progress.listen((e) {
       if (e['captureReady'] == true && !busy && !exporting) {
@@ -81,20 +114,66 @@ class ScannerController extends ChangeNotifier {
   }
 
   Future<void> preference(String key, Object value) async {
+    if (key == 'diagnostics' || key == 'analytics') {
+      if (consentUpdating) throw ScanFailure('busy');
+      consentUpdating = true;
+      notifyListeners();
+      try {
+        final enabled = value as bool;
+        // Persist opt-out before SDK work, even if disabling a remote SDK fails.
+        if (!enabled) await prefs.setBool(key, false);
+        await monitoring.consent(
+          key == 'diagnostics' ? enabled : diagnostics,
+          key == 'analytics' ? enabled : analytics,
+        );
+        if (enabled) await prefs.setBool(key, true);
+      } finally {
+        consentUpdating = false;
+        notifyListeners();
+      }
+      return;
+    }
     if (value is bool) await prefs.setBool(key, value);
     if (value is int) await prefs.setInt(key, value);
     if (value is String) await prefs.setString(key, value);
-    if (key == 'diagnostics' || key == 'analytics') {
-      await monitoring.consent(diagnostics, analytics);
-    }
     notifyListeners();
   }
 
-  Future<void> capture({bool manual = false, bool gallery = false}) async {
+  Draft _mergeCapture(
+    Draft current,
+    List<PageAsset> incoming, {
+    String? replacePageId,
+  }) {
+    if (incoming.isEmpty) return current;
+    final next = [...current.pages];
+    if (replacePageId != null) {
+      final index = next.indexWhere((p) => p.id == replacePageId);
+      if (index < 0 || incoming.length != 1) throw ScanFailure('invalid');
+      next[index] = incoming.single;
+    } else {
+      next.addAll(incoming);
+    }
+    if (next.length > maxPages) throw ScanFailure('limit');
+    return current.withPages(next);
+  }
+
+  Future<void> capture({
+    bool manual = false,
+    bool gallery = false,
+    String? replacePageId,
+  }) async {
     if (busy || exporting) throw ScanFailure('busy');
     if (pendingCommit != null) throw ScanFailure('index');
     final current = draft ?? Draft(const Uuid().v4(), [], DateTime.now());
-    final remaining = maxPages - current.pages.length;
+    if (replacePageId != null &&
+        (!manual ||
+            gallery ||
+            !current.pages.any((p) => p.id == replacePageId))) {
+      throw ScanFailure('invalid');
+    }
+    final remaining = replacePageId == null
+        ? maxPages - current.pages.length
+        : 1;
     if (remaining <= 0) throw ScanFailure('limit');
     draft = current;
     busy = true;
@@ -102,9 +181,17 @@ class ScannerController extends ChangeNotifier {
     try {
       await _writes;
       await store.saveDraft(current);
+      if (manual && replacePageId != null) {
+        await prefs.setString(
+          'cameraReplacement',
+          jsonEncode({'session': current.id, 'page': replacePageId}),
+        );
+      } else {
+        await prefs.remove('cameraReplacement');
+      }
       List<PageAsset> pages;
       if (gallery) {
-        final selected = await ImagePicker().pickMultiImage(
+        final selected = await imagePicker.pickMultiImage(
           limit: remaining > 1 ? remaining : null,
         );
         pages = await platform.stage(
@@ -112,7 +199,7 @@ class ScannerController extends ChangeNotifier {
           selected.take(remaining).map((e) => e.path).toList(),
         );
       } else if (manual) {
-        final selected = await ImagePicker().pickImage(
+        final selected = await imagePicker.pickImage(
           source: ImageSource.camera,
         );
         pages = selected == null
@@ -132,17 +219,28 @@ class ScannerController extends ChangeNotifier {
           prepared.add(edited.copyWith(thumb: await platform.preview(edited)));
         }
       }
-      draft = current.withPages([...current.pages, ...prepared]);
-      await store.saveDraft(draft!);
-      if (!gallery && !manual)
+      final captured = _mergeCapture(
+        current,
+        prepared,
+        replacePageId: replacePageId,
+      );
+      await store.saveDraft(captured);
+      draft = captured;
+      if (!gallery && !manual) {
         await platform.call<void>('acknowledgeCapture', {
           'session': current.id,
         });
+      }
     } catch (e, stack) {
       monitoring.failure('capture', stack);
       if (e is ScanFailure) rethrow;
       throw ScanFailure('permission');
     } finally {
+      try {
+        await prefs.remove('cameraReplacement');
+      } catch (_) {
+        /* Rechecked on restart. */
+      }
       busy = false;
       notifyListeners();
     }

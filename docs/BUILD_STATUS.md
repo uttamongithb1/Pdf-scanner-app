@@ -1,15 +1,23 @@
 # Verified Android and iOS build results
 
-Updated: **15 October 2026**. This is a compiled **development app**, not a store-qualified production release.
+Updated: **7 November 2026**. This is a compiled **development app**, not a store-qualified production release.
 
-## Final passing build
+## Recovery/release-safety follow-up — validation in progress
+
+The November work adds durable capture/mutation recovery, multi-draft resume, page dragging, conservative cleanup, signing protection, privacy-consent fixes and additional native tests. It is **not** covered by the older all-green baseline below.
+
+[Run 42333515530](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/42333515530), source `0e3796fd7e1b80ddc4f9fbded892b84be21b18d0`, has passed Android debug/development-release builds, all five Android API 35 native integration cases and the PDF-writer job. All twenty-two Flutter tests passed; shared analysis found one missing-braces lint, now fixed in the working source. The iOS simulator debug build passed; its first simulator integration attempt is still being investigated. Do not count a compiled simulator app as a successful runtime test.
+
+The latest changes additionally include bounded native-test timeouts, stronger filter/rotation/crop assertions, camera retake at the fifty-page limit, consent regressions, a negative signing test and sampled emulator memory artifacts. Final validation for those changes is pending. Local repository/parser checks and eight Python tests pass.
+
+## Historical all-green baseline
 
 **All four jobs passed** in [GitHub Actions run 38719406316](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/38719406316).
 
 - Validated application source: `2c9d72b40f7ea55b27820f94c77d97d4fec24636`.
 - Branch: `arena/dd30c98a-pdf-scanner-app`; main was not changed.
 - Flutter 3.35.7 / Dart 3.9, Java 17 on Linux for Android, macOS/Xcode for iOS.
-- Subsequent documentation-only commits do not change this built application.
+- This is historical baseline evidence, **not** validation of subsequent application changes.
 
 | Check | Actual result |
 |---|---|
@@ -63,7 +71,7 @@ Build findings were addressed rather than treating authored source as a complete
 
 The Linux workspace contains a Flutter 3.35.7 **source checkout** and working test-only Java 17 runtime/Kotlin 2.1/Python tools. It does **not** contain a working Flutter/Dart binary SDK, full JDK, Android SDK/adb or Xcode.
 
-Official SDK/package downloads and Actions blob downloads are blocked by this workspace's network policy. Full local SDK installation therefore could not be completed. Actual Android compilation ran on GitHub-hosted Linux and iOS compilation on a GitHub-hosted Mac; open artifact links in your browser to download them. No Android emulator, physical phone, iPhone or simulator app run is claimed here.
+Official SDK/package downloads and Actions blob downloads are blocked by this workspace's network policy. Full local SDK installation therefore could not be completed. Actual Android compilation ran on GitHub-hosted Linux and iOS compilation on a GitHub-hosted Mac; open artifact links in your browser to download them. Android emulator integration has since executed remotely as noted above; no physical-phone capture or real-device performance run is claimed. The iPhone simulator runtime result must be recorded separately from its build.
 
 The actual JVM PDF writer was also compiled and executed locally; structural checks, source parsing and the eight Python regression tests pass locally. Parser checks were not substituted for the real remote Flutter/native compilation.
 
@@ -73,6 +81,6 @@ The actual JVM PDF writer was also compiled and executed locally; structural che
 - Apple signing/provisioning is required for an installable iPhone build or App Store IPA. Unsigned compilation alone cannot provide one.
 - Execute [the device test plan](DEVICE_TEST_PLAN.md), including capture, gallery, SAF/Files, storage exhaustion, cancellation/process death, accessibility and 50-page performance.
 - Firebase remains unconfigured and reporting is off by default; attach a developer-owned project only if wanted.
-- Remaining product/recovery/branding/privacy gaps are documented in [implementation status](IMPLEMENTATION.md). Successful compilation does not qualify those acceptance criteria.
+- Remaining product scope and physical-device/privacy gates are documented in [implementation status](IMPLEMENTATION.md). Successful compilation does not qualify those acceptance criteria.
 
 See [BUILD.md](BUILD.md) for toolchain setup, exact rebuild commands and platform-specific limitations.

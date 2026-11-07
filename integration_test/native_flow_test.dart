@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter/foundation.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -14,7 +16,10 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   final platform = ScannerPlatform();
 
-  Future<List<PageAsset>> fixture(String id) async {
+  Future<List<PageAsset>> fixture(String id, WidgetTester tester) async {
+    // Establish a real Flutter surface before offscreen GPU image work on iOS.
+    debugPrint('[native] establish Flutter surface');
+    await tester.pumpWidget(const SizedBox.shrink());
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder);
     canvas.drawRect(
@@ -26,12 +31,14 @@ void main() {
       ui.Paint()..color = const ui.Color(0xff4f46e5),
     );
     final picture = recorder.endRecording();
+    debugPrint('[native] raster fixture');
     final image = await picture.toImage(240, 360);
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
     image.dispose();
     picture.dispose();
     final file = File('${(await getTemporaryDirectory()).path}/$id.png');
     await file.writeAsBytes(bytes!.buffer.asUint8List(), flush: true);
+    debugPrint('[native] stage fixture');
     final pages = await platform.stage(id, [file.path]);
     await file.delete();
     return pages;
@@ -58,51 +65,98 @@ void main() {
     );
   }
 
-  testWidgets('native stage/filter/PDF/render/rename/delete round trip', (
-    tester,
-  ) async {
-    final id = const Uuid().v4();
-    final pages = await fixture(id);
-    for (final filter in filters) {
-      final preview = await platform.preview(
-        pages.first.copyWith(filter: filter),
+  testWidgets(
+    'native stage/filter/PDF/render/rename/delete round trip',
+    (tester) async {
+      final id = const Uuid().v4();
+      final pages = await fixture(id, tester);
+      for (final filter in filters) {
+        debugPrint('[native] filter $filter');
+        final preview = await platform.preview(
+          pages.first.copyWith(filter: filter),
+        );
+        expect(await File(preview).length(), greaterThan(100));
+        final codec = await ui.instantiateImageCodec(
+          await File(preview).readAsBytes(),
+        );
+        final frame = await codec.getNextFrame();
+        final pixels = await frame.image.toByteData(
+          format: ui.ImageByteFormat.rawRgba,
+        );
+        final position = (40 * frame.image.width + 40) * 4;
+        final red = pixels!.getUint8(position),
+            green = pixels.getUint8(position + 1),
+            blue = pixels.getUint8(position + 2);
+        if (filter == 'greyscale' || filter == 'bw') {
+          expect((red - green).abs(), lessThanOrEqualTo(4));
+          expect((red - blue).abs(), lessThanOrEqualTo(4));
+        }
+        if (filter == 'bw') expect(red, lessThan(15));
+        frame.image.dispose();
+        codec.dispose();
+      }
+      for (final rotation in [0, 90, 180, 270]) {
+        debugPrint('[native] rotate $rotation');
+        final preview = await platform.preview(
+          pages.first.copyWith(rotation: rotation),
+        );
+        final codec = await ui.instantiateImageCodec(
+          await File(preview).readAsBytes(),
+        );
+        final image = (await codec.getNextFrame()).image;
+        expect(image.width, rotation % 180 == 0 ? 240 : 360);
+        expect(image.height, rotation % 180 == 0 ? 360 : 240);
+        image.dispose();
+        codec.dispose();
+      }
+      await expectLater(
+        platform.preview(
+          pages.first.copyWith(corners: [0, 0, 1, 1, 1, 0, 0, 1]),
+        ),
+        throwsA(isA<ScanFailure>()),
       );
-      expect(await File(preview).length(), greaterThan(100));
-    }
-    final data = await export(id, pages);
-    final rendered = await platform.call<Map>('pdfPage', {...data, 'index': 0});
-    expect(rendered!['count'], 1);
-    final renamed = Map<String, dynamic>.from(
-      (await platform.call<Map>('rename', {
+      debugPrint('[native] export PDF');
+      final data = await export(id, pages);
+      final rendered = await platform.call<Map>('pdfPage', {
         ...data,
+        'index': 0,
+      });
+      expect(rendered!['count'], 1);
+      debugPrint('[native] rename PDF');
+      final renamed = Map<String, dynamic>.from(
+        (await platform.call<Map>('rename', {
+          ...data,
+          'newTitle': 'Renamed-$id',
+        }))!,
+      );
+      expect(renamed['title'], 'Renamed-$id');
+      final repeated = await platform.call<Map>('rename', {
+        ...renamed,
         'newTitle': 'Renamed-$id',
-      }))!,
-    );
-    expect(renamed['title'], 'Renamed-$id');
-    final repeated = await platform.call<Map>('rename', {
-      ...renamed,
-      'newTitle': 'Renamed-$id',
-    });
-    expect(repeated!['uri'], renamed['uri']);
-    await platform.call<void>('delete', {...renamed, 'deleteImages': true});
-    final state = await platform.call<Map>('initialise');
-    expect(
-      (state!['receipts'] as List).any(
-        (e) => e['id'] == id && e['deleted'] == true,
-      ),
-      isTrue,
-    );
-    await platform.call<void>('acknowledgeDeletion', {'id': id});
-    await platform.call<void>('discard', {'session': id});
-  });
+      });
+      expect(repeated!['uri'], renamed['uri']);
+      debugPrint('[native] delete PDF');
+      await platform.call<void>('delete', {...renamed, 'deleteImages': true});
+      final state = await platform.call<Map>('initialise');
+      expect(
+        (state!['receipts'] as List).any(
+          (e) => e['id'] == id && e['deleted'] == true,
+        ),
+        isTrue,
+      );
+      await platform.call<void>('acknowledgeDeletion', {'id': id});
+      await platform.call<void>('discard', {'session': id});
+    },
+    timeout: const Timeout(Duration(seconds: 90)),
+  );
 
   testWidgets(
     'crash-window rename and partial-delete intents replay on Android',
     (tester) async {
-      if (!Platform.isAndroid) return;
       final id = const Uuid().v4();
-      final pages = await fixture(id);
+      final pages = await fixture(id, tester);
       final root = File(pages.first.path).parent.parent.parent;
+      debugPrint('[native] export PDF');
       final data = await export(id, pages);
       final old = File.fromUri(Uri.parse(data['uri'] as String));
       final target = File('${old.parent.path}/Recovered-$id.pdf');
@@ -149,13 +203,15 @@ void main() {
       await platform.call<void>('acknowledgeDeletion', {'id': id});
       await platform.call<void>('discard', {'session': id});
     },
+    timeout: const Timeout(Duration(seconds: 90)),
+    skip: !Platform.isAndroid,
   );
 
   testWidgets(
     'native fifty-page output is readable and SQLite commits atomically',
     (tester) async {
       final id = const Uuid().v4();
-      final pages = await fixture(id);
+      final pages = await fixture(id, tester);
       final repeated = List<PageAsset>.generate(50, (_) => pages.first);
       final data = await export(id, repeated);
       final last = await platform.call<Map>('pdfPage', {...data, 'index': 49});
@@ -188,48 +244,53 @@ void main() {
         await store.db.close();
       }
     },
+    timeout: const Timeout(Duration(seconds: 90)),
   );
-  testWidgets('corrupt decoder input rolls back a partially staged batch', (
-    tester,
-  ) async {
-    final sourceId = const Uuid().v4();
-    final source = (await fixture(sourceId)).first;
-    final bad = File(
-      '${(await getTemporaryDirectory()).path}/invalid-${const Uuid().v4()}.jpg',
-    );
-    await bad.writeAsBytes([0xff, 0xd8, 0, 1, 2, 3, 4], flush: true);
-    final id = const Uuid().v4();
-    await expectLater(
-      platform.stage(id, [source.path, bad.path]),
-      throwsA(isA<ScanFailure>()),
-    );
-    expect(await File(source.path).exists(), isTrue);
-    await bad.delete();
-    await platform.call<void>('discard', {'session': sourceId});
-    await platform.call<void>('discard', {'session': id});
-  });
-  testWidgets('maintenance removes only old unreferenced previews', (
-    tester,
-  ) async {
-    final id = const Uuid().v4();
-    final source = (await fixture(id)).first;
-    final folder = File(source.path).parent;
-    final active = await File(
-      source.thumb,
-    ).copy('${folder.path}/preview-active.jpg');
-    final orphan = await File(
-      source.thumb,
-    ).copy('${folder.path}/preview-orphan.jpg');
-    final old = DateTime.now().subtract(const Duration(days: 3));
-    for (final file in [active, orphan, File(source.path)]) {
-      await file.setLastModified(old);
-    }
-    await platform.call<void>('maintenance', {
-      'protectedPaths': [active.path, source.path],
-    });
-    expect(await active.exists(), isTrue);
-    expect(await orphan.exists(), isFalse);
-    expect(await File(source.path).exists(), isTrue);
-    await platform.call<void>('discard', {'session': id});
-  });
+  testWidgets(
+    'corrupt decoder input rolls back a partially staged batch',
+    (tester) async {
+      final sourceId = const Uuid().v4();
+      final source = (await fixture(sourceId)).first;
+      final bad = File(
+        '${(await getTemporaryDirectory()).path}/invalid-${const Uuid().v4()}.jpg',
+      );
+      await bad.writeAsBytes([0xff, 0xd8, 0, 1, 2, 3, 4], flush: true);
+      final id = const Uuid().v4();
+      await expectLater(
+        platform.stage(id, [source.path, bad.path]),
+        throwsA(isA<ScanFailure>()),
+      );
+      expect(await File(source.path).exists(), isTrue);
+      await bad.delete();
+      await platform.call<void>('discard', {'session': sourceId});
+      await platform.call<void>('discard', {'session': id});
+    },
+    timeout: const Timeout(Duration(seconds: 90)),
+  );
+  testWidgets(
+    'maintenance removes only old unreferenced previews',
+    (tester) async {
+      final id = const Uuid().v4();
+      final source = (await fixture(id, tester)).first;
+      final folder = File(source.path).parent;
+      final active = await File(
+        source.thumb,
+      ).copy('${folder.path}/preview-active.jpg');
+      final orphan = await File(
+        source.thumb,
+      ).copy('${folder.path}/preview-orphan.jpg');
+      final old = DateTime.now().subtract(const Duration(days: 3));
+      for (final file in [active, orphan, File(source.path)]) {
+        await file.setLastModified(old);
+      }
+      await platform.call<void>('maintenance', {
+        'protectedPaths': [active.path, source.path],
+      });
+      expect(await active.exists(), isTrue);
+      expect(await orphan.exists(), isFalse);
+      expect(await File(source.path).exists(), isTrue);
+      await platform.call<void>('discard', {'session': id});
+    },
+    timeout: const Timeout(Duration(seconds: 90)),
+  );
 }

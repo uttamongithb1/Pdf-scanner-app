@@ -2,7 +2,7 @@
 
 ## What is checked in
 
-This is an initial mobile implementation, not just wireframes. It includes a Flutter UI, Kotlin Android engine, Swift iOS engine, SQLite persistence, platform projects, tests and CI definitions. It is not a store-qualified release.
+This is a working development implementation, not just wireframes. It includes a Flutter UI, Kotlin Android engine, Swift iOS engine, SQLite persistence, platform projects, tests and CI definitions. It is not a store-qualified release.
 
 - Flutter **3.35.7** / Dart **3.9.x** is the CI baseline.
 - Android minimum **API 26**, Java **17**, Android SDK/NDK versions provided by Flutter's build tooling.
@@ -53,14 +53,25 @@ This helper transfers only the two allowlisted public lockfiles, checks chunk co
 flutter devices
 flutter run -d <android-device-id>
 flutter build apk --debug
-flutter build apk --release
+LUMEN_ALLOW_DEBUG_SIGNING=true flutter build apk --release  # INTERNAL TESTING ONLY
 ```
 
 Open Settings → Library location and select a local folder. The app creates `PDF Scanner` below the selected directory unless it is already selected. Subfolders are `PDFs`, `Images/Processed`, and optionally `Images/Originals`.
 
 If you decline, exports use app-specific storage, clearly labelled **App storage**. It is not guaranteed visible through a third-party file manager and is removed at uninstall. Use Share to save an independent copy.
 
-The optimized release-mode APK currently uses the template's debug signing configuration for development only; CI labels it `android-release-development-apk`. Configure a private upload keystore and secure release signing before producing a Play AAB. Never publish a debug-signed build or put signing credentials in Git.
+**Release signing fails closed.** Without private signing configuration, a normal `flutter build apk --release` must fail. CI verifies that failure before building its explicitly opted-in, debug-signed `android-release-development-apk`. Never publish that development artifact.
+
+For distribution, create a protected upload keystore outside Git and supply ignored `android/key.properties`:
+
+```properties
+storeFile=/absolute/path/to/private-upload.jks
+storePassword=YOUR_LOCAL_SECRET
+keyAlias=YOUR_UPLOAD_ALIAS
+keyPassword=YOUR_LOCAL_SECRET
+```
+
+Use your own local values, never commit this file or share secrets in chat. With it configured, run `flutter build appbundle --release` and verify the signing certificate before upload. Keep backups of the protected key; a CI development key is not your production identity.
 
 ## iOS
 
@@ -92,7 +103,7 @@ flutter build apk --debug
 flutter build ios --simulator --debug  # macOS only
 ```
 
-`.github/workflows/mobile.yml` executes Flutter analysis/tests, repository and asset regression checks, Android debug/optimized APK builds, iOS simulator/unsigned-device builds, and the pure-JVM PDF writer smoke test. Actual run results and artifact links are recorded in [BUILD_STATUS.md](BUILD_STATUS.md).
+`.github/workflows/mobile.yml` executes Flutter analysis/tests, repository and asset regression checks, Android debug/optimized APK builds, iOS simulator/unsigned-device builds, the pure-JVM PDF writer smoke test, native Android/iPhone-simulator integration tests, a negative signing-guard test and sampled Android emulator memory reporting. Actual run results and artifact links are recorded in [BUILD_STATUS.md](BUILD_STATUS.md).
 
 To rebuild the current work branch without changing main:
 
@@ -123,4 +134,18 @@ PyMuPDF is a test-only independent parser/renderer; it is not an app runtime dep
 
 ## Development and release boundaries
 
-See [implementation status](IMPLEMENTATION.md), [monitoring setup](MONITORING.md), and [device acceptance plan](DEVICE_TEST_PLAN.md). App Store/Play SDK targets, signing, Firebase configuration, store privacy declarations, original icon assets and device qualification remain release-owner work.
+See [implementation status](IMPLEMENTATION.md), [monitoring setup](MONITORING.md), and [device acceptance plan](DEVICE_TEST_PLAN.md). App Store/Play SDK targets, signing, optional Firebase configuration, store privacy declarations and physical-device qualification remain release-owner work. The app has custom development icon assets; final brand approval and trademark ownership remain yours.
+
+## Native integration and memory sampling
+
+On a connected emulator/device (iOS requires a Mac):
+
+```sh
+flutter test integration_test/native_flow_test.dart -d <device-id> --reporter expanded --fail-fast
+# Android emulator with adb on PATH:
+python3 scripts/profile_android_integration.py
+```
+
+The tests cover synthetic image staging, filters, exact right-angle dimensions, invalid crops, PDF render/rename/delete, a fifty-page export with a real SQLite rollback/retry, corrupt-batch rollback and conservative preview cleanup. Android also simulates persisted rename/partial-delete crash windows; that platform-specific case is **skipped**, not counted as an iOS pass.
+
+`android-native-memory-report` contains `build/reports/android-native-memory.json`: whole-app PSS/RSS sampled every two seconds in an **emulator/debug** build. Maximum sampled memory is not a guaranteed peak, does not include hosted scanner processes and does not qualify physical-device release performance. Execute the device plan separately.

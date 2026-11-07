@@ -166,6 +166,8 @@ class ScanFailure implements Exception {
   final String code;
   bool get cancelled => code == 'cancelled';
   String get message => switch (code) {
+    'monitoring' =>
+      'Reporting could not be connected. Your choice was not enabled. Scanning and saving still work.',
     'permission' =>
       'Access is off. Enable it in device Settings or import photos instead.',
     'storage' =>

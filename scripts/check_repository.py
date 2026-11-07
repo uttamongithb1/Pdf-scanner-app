@@ -69,6 +69,12 @@ def check():
     assert '{{' not in project
     assert 'IPHONEOS_DEPLOYMENT_TARGET = 16.0' in project
     manifest = (ROOT / 'android/app/src/main/AndroidManifest.xml').read_text()
+    assert 'android:allowBackup="false"' in manifest
+    assert 'android:dataExtractionRules="@xml/data_extraction_rules"' in manifest
+    privacy = plistlib.loads((ROOT / 'ios/Runner/PrivacyInfo.xcprivacy').read_bytes())
+    assert privacy['NSPrivacyTracking'] is False
+    assert privacy['NSPrivacyCollectedDataTypes'] == []  # Firebase-disabled baseline only.
+    assert 'PrivacyInfo.xcprivacy in Resources' in project
     assert 'MANAGE_EXTERNAL_STORAGE' not in manifest
     assert 'READ_MEDIA_IMAGES' not in manifest
     assert 'firebase_crashlytics_collection_enabled' in manifest

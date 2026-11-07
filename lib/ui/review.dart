@@ -206,17 +206,10 @@ class ReviewScreen extends ConsumerWidget {
                                             }
                                           }
                                           if (value == 'retake') {
-                                            final before = List<PageAsset>.of(
-                                              c.draft!.pages,
+                                            await c.capture(
+                                              manual: true,
+                                              replacePageId: p.id,
                                             );
-                                            await c.capture(manual: true);
-                                            final after = c.draft!.pages;
-                                            if (after.length > before.length) {
-                                              final replacement = after.last;
-                                              final next = [...before];
-                                              next[index] = replacement;
-                                              await c.updatePages(next);
-                                            }
                                           }
                                         },
                                       ),
@@ -237,7 +230,6 @@ class ReviewScreen extends ConsumerWidget {
                                         ),
                                         PopupMenuItem(
                                           value: 'retake',
-                                          enabled: pages.length < maxPages,
                                           child: const Text(
                                             'Retake with camera',
                                           ),

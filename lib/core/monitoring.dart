@@ -2,14 +2,18 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
+import 'models.dart';
 
 /// Firebase is opt-in at build-time AND at user level. Native collection is
 /// disabled in platform configuration before Firebase can auto-initialise.
 class Monitoring {
+  Monitoring({bool? enabled})
+    : available = enabled ?? const bool.fromEnvironment('FIREBASE_ENABLED');
+  final bool available;
   bool ready = false;
   bool _diagnostics = false, _analytics = false;
   Future<void> initialise(bool diagnostics, bool analytics) async {
-    if (!const bool.fromEnvironment('FIREBASE_ENABLED')) return;
+    if (!available || (!diagnostics && !analytics)) return;
     try {
       await Firebase.initializeApp();
       ready = true;
@@ -23,14 +27,33 @@ class Monitoring {
         return false;
       };
     } catch (_) {
+      _diagnostics = false;
+      _analytics = false;
+      try {
+        await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(
+          false,
+        );
+      } catch (_) {
+        /* Configuration may be absent. */
+      }
+      try {
+        await FirebaseAnalytics.instance.setAnalyticsCollectionEnabled(false);
+      } catch (_) {
+        /* Configuration may be absent. */
+      }
       ready = false;
     } // App must work without remote configuration.
   }
 
   Future<void> consent(bool diagnostics, bool analytics) async {
-    if (!ready) return;
+    if (!ready && (diagnostics || analytics)) {
+      await initialise(diagnostics, analytics);
+      if (!ready) throw ScanFailure('monitoring');
+      return;
+    }
     _diagnostics = diagnostics;
     _analytics = analytics;
+    if (!ready) return;
     await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(
       diagnostics,
     );

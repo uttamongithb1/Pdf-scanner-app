@@ -140,13 +140,13 @@ class SettingsScreen extends ConsumerWidget {
           contentPadding: EdgeInsets.zero,
           title: const Text('Share crash diagnostics'),
           subtitle: Text(
-            c.monitoring.ready
+            c.monitoring.available
                 ? 'Optional technical reports. Never document content or file names.'
                 : 'Not connected in this build. Firebase setup is required.',
           ),
           value: c.diagnostics,
-          onChanged: c.monitoring.ready
-              ? (v) => c.preference('diagnostics', v)
+          onChanged: c.monitoring.available && !c.consentUpdating
+              ? (v) => report(context, () => c.preference('diagnostics', v))
               : null,
         ),
         SwitchListTile(
@@ -156,8 +156,8 @@ class SettingsScreen extends ConsumerWidget {
             'Optional scan/export/share counts. No document data.',
           ),
           value: c.analytics,
-          onChanged: c.monitoring.ready
-              ? (v) => c.preference('analytics', v)
+          onChanged: c.monitoring.available && !c.consentUpdating
+              ? (v) => report(context, () => c.preference('analytics', v))
               : null,
         ),
         const SizedBox(height: 12),

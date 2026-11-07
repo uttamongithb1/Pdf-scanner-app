@@ -1,70 +1,53 @@
 # Implementation status — 0.1.0
 
-This status is deliberately separate from the proposed PRD. Implemented source is not equivalent to a physical-device-qualified feature.
+Updated **7 November 2026**. This is an Android/iOS development application. Implemented source, executed emulator tests and physical-device/store qualification are different claims; see [build evidence](BUILD_STATUS.md) for exact validated revisions.
 
-## Source implemented
+## Implemented application
 
-- Flutter application shell: Home, searchable/sortable list/grid library, Settings, onboarding explanation.
-- Native document capture: Android ML Kit (`16.0.0-beta1`, checked against Google's sample dependency); iOS VisionKit, with camera/image-picker fallback offered from the capture menu. iOS's hosted UI cannot enforce a custom page cap while capturing; over-limit results are rejected with the existing draft retained.
-- File-backed import with decode sampling, EXIF normalisation, processed-source re-encoding and bounded thumbnails.
-- Draft persistence in SQLite, ordered pages, resume/discard and Android image-picker lost-result retrieval.
-- Per-page editing: rotation, four-corner perspective correction, preview, reset, Original/Enhanced/Greyscale/B&W.
-- Accessible corner selection/nudges, explicit page move commands, delete with draft undo, manual retake, add pages.
-- Export options: A4, Letter, image-fit, orientation, margins, raster-quality presets, editable collision-safe names, image retention.
-- Native PDF writing: Android file-streaming JPEG-only PDF writer; iOS Core Graphics PDF context.
-- Native export progress, cooperative cancellation, independent page-count/render validation, PDF + selected image copies.
-- Android SAF-selected app-named folder and app-specific private fallback; iOS Documents container exposed in Files.
-- Private staging, published-file recovery journal, commit receipts and idempotency by session ID. SQLite receipt recovery after interrupted index commits.
-- In-app paged PDF rendering, zoom, system sharing, rename/delete/details.
-- Theme/default/retention preferences; basic private/library usage and cache cleanup.
-- Optional Firebase integration with build-level configuration gate plus default-off user reporting choices.
-- Platform project files, domain/channel/widget tests, native PDF smoke test and CI definitions.
+- Flutter Home, searchable/sortable list/grid library, Settings, theme/default preferences and onboarding.
+- Android hosted ML Kit document scanner; iOS VisionKit; manual camera and photo-import alternatives. Android automatic scanning can require an initial Google component download. iOS hosted capture cannot enforce the page cap before returning; over-limit results do not overwrite the draft.
+- File-backed image staging, EXIF normalisation, bounded decoding/thumbnails and a fifty-page document limit.
+- Multiple persistent SQLite drafts with a saved-drafts chooser. Native returned-capture receipts are acknowledged only after draft persistence; replay deduplicates page IDs. Android re-emits pending-capture availability when the Dart event listener subscribes.
+- Per-page rotation, four-corner crop, preview/reset, Original/Enhanced/Greyscale/B&W, apply-filter-to-all, drag ordering and explicit accessible move controls.
+- Remove/undo and in-place manual-camera retake, including at fifty pages. Cancellation retains the original page. A durable camera-replacement intent lets Android lost-image recovery target the original draft/page rather than append a fifty-first page. An otherwise unplaceable recovered image goes into a separate draft, preserving the full original draft.
+- A4/Letter/image-fit export, portrait/landscape, margins, quality presets, Unicode-safe names with filesystem byte bounds and optional processed/original image retention.
+- Page-at-a-time native PDF/image pipeline: streaming JPEG PDF writer on Android and Core Graphics PDF context on iOS. Progress, cooperative cancellation and independent page-count/render checks.
+- Android selected SAF folder containing `PDF Scanner/PDFs` and image subfolders, with an explicitly labelled app-private fallback. iOS Files-exposed app Documents container, labelled PDF Scanner. Share exports independent copies.
+- Paged PDF viewer/zoom, share, details, rename and PDF-only/PDF-plus-images deletion.
+- Durable export publication journals/receipts, mutation intents and deletion tombstones; startup/retry replay with a visible recovery status. Failed provider rollback and unreadable publication evidence are retained, not silently discarded. iOS Documents rename/delete use file coordination.
+- Atomic SQLite document insertion plus corresponding draft deletion. Native files and SQLite remain separate systems: receipts reconcile the cross-system crash window, not a fictitious filesystem/SQL transaction.
+- Conservative age-based cleanup of disposable previews and abandoned temporary work, protecting **all** saved-draft sources/thumbnails, capture receipts and unresolved operations. App-private backup exclusions and baseline iOS privacy manifest.
+- Optional default-off Firebase diagnostics/analytics, separate build/user gates, lazy Dart initialisation, durable opt-out and failed-opt-in handling. No Firebase project is attached.
+- Explicit production-signing guard; CI development signing requires an opt-in environment variable. Custom development icons, complete platform projects, locked dependencies, tests and CI.
 
-## Tests actually executed in this workspace
+## Validation and reproducibility
 
-- `python3 scripts/check_repository.py`: passed.
-- Tree-sitter parsing of all app/test Dart, Kotlin and Swift source: passed at the time of the final check.
-- Dart source formatting with the `dart_style` WASM formatter: applied.
-- **Actual Kotlin JPEG PDF writer compiled and executed on Java 17/Kotlin 2.1.0.** Independent PyMuPDF parsing/rendering verified 3-page order, A4/landscape/image-fit geometry, Unicode title metadata, xref offsets, 50-page writer output and incomplete-output handling.
+The [build report](BUILD_STATUS.md) is authoritative for completed runs. The older all-green baseline built both Android APK variants, iOS simulator and unsigned iOS device release, with thirteen Flutter tests. Subsequent recovery work has executed twenty-two Flutter tests, Android native integration (five cases), and native platform builds; the latest engineering changes require their own final run and must not inherit an older revision's green status.
 
-## Actual remote mobile validation
+Local execution includes repository checks, eight Python regression tests, source formatting/parsing and the actual Kotlin PDF writer compiled on Java 17/Kotlin 2.1. Independent PyMuPDF checks cover three-/fifty-page output, ordering, page geometry, Unicode metadata, xref offsets and incomplete-output handling. Local source parsing is **not** Flutter type checking.
 
-[GitHub Actions run 38719406316](https://github.com/uttamongithb1/Pdf-scanner-app/actions/runs/38719406316) passed all four jobs for app source `2c9d72b40f7ea55b27820f94c77d97d4fec24636`:
+CI additionally runs Flutter analysis/unit/widget tests; Android native image/PDF/storage integration on API 35; an iPhone-simulator integration run; negative release-signing validation; iOS unsigned release compilation; and whole-app Android emulator PSS/RSS sampling. Integration scenarios include real SQLite rollback and retry, corrupt staging rollback, stale-preview protection, pixel-channel filter checks, rotation dimensions and invalid crops. Android-only intent replay is explicitly skipped on iOS. Each native case has a bounded timeout and the test command fails fast.
 
-- Locked package resolution, strict Flutter static/type analysis (**no issues**) and **13 Flutter unit/widget tests** with coverage. Both dependency lockfiles are checked in and match the final CI output.
-- Android debug **and optimized release-mode APK** compilation and artifact upload. Both are development/debug signed, not Play-ready signed releases.
-- Xcode iOS simulator build/artifact and **unsigned iOS device release** compilation. No signed IPA has been produced.
-- Repository checks, **eight Python asset/lock-transfer regression tests** and compiled 3/50-page PDF writer checks.
+The workspace's network restrictions prevent installing a runnable Flutter/Android SDK here; Xcode requires macOS. Native builds execute on GitHub-hosted Linux/Mac runners. [BUILD.md](BUILD.md) explains reproducible commands, development artifacts and toolchain limits.
 
-See [BUILD_STATUS.md](BUILD_STATUS.md) for exact build evidence and downloads. Tooling now exposes public dependency locks through check annotations with compression, bounded chunks, integrity validation and no secret-file export. Eight local Python tests cover asset/lock-transfer regressions.
+## Deliberate product/architecture boundaries
 
-## Not executed
+- Validated MethodChannels rather than generated Pigeon; `sqflite` versioned tables rather than Drift. Schema version 1 is not a historical migration qualification suite.
+- Image-only PDF generation, not OCR/searchable PDFs, arbitrary PDF editing or encrypted-vault storage.
+- Enhanced is contrast/brightness, not a shadow-removal model. Android Otsu and iOS Core Image B&W are not claimed perceptually identical; faint-writing/corpus validation remains open.
+- iOS Core Graphics controls PDF image encoding; identical quality numbers do not promise the same file sizes as Android.
+- iOS canonical storage is the Files-exposed app container, not an arbitrarily selected external tree/bookmark. Android provider capabilities vary.
+- English-first interface. Full externalised localisation/Hindi, pseudo-localisation, complete RTL qualification, visual goldens and a full screen-reader audit remain unfinished product/QA work. A large-text/RTL review-layout regression test is not full localisation.
+- Cleanup runs conservatively on startup and manually, not an OS-scheduled background retention service. Recoverable files are not disposable cache.
+- Emulator memory samples are debug-build measurements, not a true peak or a physical-phone release benchmark. Hosted scanner process memory is outside that report.
 
-Physical-device/emulator app runs, platform integration tests, camera/SAF/Files tests and physical-device performance tests. Local Flutter/Android compilation is still unavailable: official SDK download hosts are blocked by the workspace network policy, and Xcode requires macOS. The available Java installation is a test-only runtime, not a full JDK. Real mobile compilation above took place on GitHub-hosted runners; syntax parsing alone was not treated as type checking.
+## Release-owner and physical-device gates
 
-## Deliberate implementation differences from the proposal
+1. Supply protected Android signing and Apple team/provisioning; approve bundle IDs, branding and store listings. No signed iPhone IPA or store-ready Android artifact is claimed.
+2. Execute [DEVICE_TEST_PLAN.md](DEVICE_TEST_PLAN.md): physical camera, offline first-install fallback, SAF/Files provider behaviour, actual process death and low storage.
+3. Measure fifty-page release/profile latency and total native memory on supported phones, including hosted scanning; exercise decoder/filter corpora and independent PDF readers.
+4. Complete accessibility/layout audit and either accept/document English-first scope or implement the remaining localisation/golden suite before claiming those PRD criteria.
+5. If optional monitoring is wanted, attach the owner's Firebase project, configure symbols, audit network/consent behaviour and complete disclosures. Default builds remain unconfigured.
+6. Review current Play/App Store SDK requirements, third-party licences, privacy manifest reasons/collected data and OS backup/restore behaviour for the final enabled configuration.
 
-- Uses an explicit validated MethodChannel contract rather than generated Pigeon APIs for this first slice. A Pigeon migration remains desirable as the bridge grows.
-- Uses `sqflite` with versioned SQLite tables rather than Drift code generation. Records/manifests are serialised JSON; schema version 1 is an initial baseline, not a historical migration suite.
-- Android uses a narrow JPEG-only PDF writer instead of retaining Android `PdfDocument` pages. It supports this app's image-PDF output only, not arbitrary PDF editing. The actual writer has an independent smoke test.
-- Enhanced is a basic contrast/brightness treatment, not a claimed adaptive shadow-removal model. B&W uses Otsu on Android and Core Image threshold on iOS; perceptual cross-platform parity and faint-writing qualification remain open.
-- Quality controls choose raster decode ceilings; encoded JPEG quality is applied to saved processed images and Android PDF JPEG streams. iOS Core Graphics controls its own PDF image encoding, so identical quality numbers do not guarantee equivalent PDF sizes.
-- Sharing and Files exposure are implemented; a canonical externally selected iOS document-tree library is not.
-- Source strings are currently English, not extracted ARB translations. Other languages/full RTL qualification are not claimed.
-- Explicit move actions implement ordering; drag-and-drop ordering is not yet implemented.
-- Cache cleanup is manual. Scheduled background cleanup and full crash-safe transactional rename/delete are not complete.
-
-## Release-blocking follow-up
-
-1. Maintain reviewed dependency locks and repeat the passing Android/iOS CI builds for changes. Compilation and shared tests now pass; this does not replace the device and release requirements below.
-2. Execute [DEVICE_TEST_PLAN.md](DEVICE_TEST_PLAN.md), including first-install offline fallback, low storage, provider disconnect and process death.
-3. Qualify 50-page limits and total native-process memory. Image raster work is page-at-a-time; iOS PDF internals and OS scanner memory are not proven constant-memory.
-4. Coordinate iOS Documents writes with external editors; qualify SAF providers, partial provider writes and rename/collision semantics. Add recoverable delete/rename transactions and retry/cleanup UI for provider rollback failures.
-5. Improve recovery when the OS kills hosted Android document capture itself (the separate image-picker fallback already has lost-result handling). Verify interrupted iOS capture behaviour.
-6. Add durable save-before-publication cleanup classification, stale-draft review, orphan temporary-file cleanup and limited storage retention. Do not delete recoverable sources as ordinary cache.
-7. Add page-drag controls, full localisation/pseudo-localisation, screen-reader audit, goldens and full large-text/small-device layout qualification.
-8. Extend decoder fuzz/error tests and B&W/Enhanced filter corpus checks. Shared PDF/image files are not encrypted vault content.
-9. Configure Firebase, consent/disclosures and symbol uploads if monitoring is enabled. Current builds have no developer Firebase project attached.
-10. Replace provisional branding/icons and development signing; check current store SDK requirements, SDK licences, privacy manifests and OS backup behaviour.
-
-**Do not publish this development build as a production release without these checks.**
+**Do not confuse successful compilation or simulated crash-journal replay with physical-device/store release qualification.**

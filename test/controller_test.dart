@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:pdf_scanner/core/controller.dart';
@@ -90,6 +91,33 @@ class ExportPlatform extends ScannerPlatform {
   }
 }
 
+class CameraPicker extends ImagePicker {
+  CameraPicker({this.cancelled = false});
+  final bool cancelled;
+  @override
+  Future<XFile?> pickImage({
+    required ImageSource source,
+    double? maxWidth,
+    double? maxHeight,
+    int? imageQuality,
+    CameraDevice preferredCameraDevice = CameraDevice.rear,
+    bool requestFullMetadata = true,
+  }) async => cancelled ? null : XFile('/camera/new.jpg');
+}
+
+class CapturePlatform extends ExportPlatform {
+  @override
+  Future<List<PageAsset>> stage(String session, List<String> paths) async => [
+    const PageAsset(
+      id: 'replacement',
+      path: '/new.jpg',
+      thumb: '/new.jpg',
+      width: 240,
+      height: 360,
+    ),
+  ];
+}
+
 Draft fixture() => Draft('session', [
   const PageAsset(
     id: 'p',
@@ -103,14 +131,16 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   Future<ScannerController> controller(
     MemoryStore store,
-    ExportPlatform platform,
-  ) async {
+    ExportPlatform platform, {
+    ImagePicker? imagePicker,
+  }) async {
     SharedPreferences.setMockInitialValues({});
     final c = ScannerController(
       store,
       await SharedPreferences.getInstance(),
       platform,
       Monitoring(),
+      imagePicker: imagePicker,
     );
     c.draft = fixture();
     return c;
@@ -306,6 +336,86 @@ void main() {
       store.unsaved.map((item) => item.id),
       containsAll(['session', 'older']),
     );
+    c.dispose();
+  });
+  test('unconfigured monitoring cannot silently persist opt-in', () async {
+    final c = await controller(MemoryStore(), ExportPlatform());
+    await expectLater(
+      c.preference('diagnostics', true),
+      throwsA(isA<ScanFailure>()),
+    );
+    expect(c.diagnostics, isFalse);
+    expect(c.consentUpdating, isFalse);
+    await c.preference('diagnostics', false);
+    expect(c.diagnostics, isFalse);
+    c.dispose();
+  });
+  test(
+    'a configured build with both choices off does not initialize Firebase',
+    () async {
+      final monitoring = Monitoring(enabled: true);
+      await monitoring.initialise(false, false);
+      expect(monitoring.ready, isFalse);
+      await monitoring.consent(false, false);
+      expect(monitoring.ready, isFalse);
+    },
+  );
+  test('retake replaces in place even with fifty pages', () async {
+    final store = MemoryStore();
+    final c = await controller(
+      store,
+      CapturePlatform(),
+      imagePicker: CameraPicker(),
+    );
+    c.draft = fixture().withPages(
+      List.generate(
+        maxPages,
+        (i) => PageAsset(
+          id: 'page-$i',
+          path: '/$i.jpg',
+          thumb: '/$i.jpg',
+          width: 240,
+          height: 360,
+        ),
+      ),
+    );
+    await c.capture(manual: true, replacePageId: 'page-25');
+    expect(c.draft!.pages.length, maxPages);
+    expect(c.draft!.pages[24].id, 'page-24');
+    expect(c.draft!.pages[25].id, 'replacement');
+    expect(c.draft!.pages[26].id, 'page-26');
+    expect(store.unsaved.single.pages[25].id, 'replacement');
+    expect(c.prefs.getString('cameraReplacement'), isNull);
+    c.dispose();
+  });
+  test(
+    'cancelled retake keeps original page and clears camera intent',
+    () async {
+      final c = await controller(
+        MemoryStore(),
+        CapturePlatform(),
+        imagePicker: CameraPicker(cancelled: true),
+      );
+      final before = c.draft!.pages.single;
+      await c.capture(manual: true, replacePageId: before.id);
+      expect(c.draft!.pages.single.id, before.id);
+      expect(c.prefs.getString('cameraReplacement'), isNull);
+      expect(c.busy, isFalse);
+      c.dispose();
+    },
+  );
+  test('retake rejects stale page ids before opening the camera', () async {
+    final c = await controller(
+      MemoryStore(),
+      CapturePlatform(),
+      imagePicker: CameraPicker(),
+    );
+    await expectLater(
+      c.capture(manual: true, replacePageId: 'missing'),
+      throwsA(isA<ScanFailure>()),
+    );
+    expect(c.draft!.pages.single.id, fixture().pages.single.id);
+    expect(c.busy, isFalse);
     c.dispose();
   });
 }

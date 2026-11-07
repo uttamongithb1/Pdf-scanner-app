@@ -114,10 +114,14 @@ final class ScannerEngine: NSObject, FlutterStreamHandler, VNDocumentCameraViewC
         let jobs = (try? FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("jobs"), includingPropertiesForKeys: nil)) ?? []
         for job in jobs {
             var clean = true
-            if !FileManager.default.fileExists(atPath: root.appendingPathComponent("receipts/\(job.lastPathComponent).json").path),
-               let data = try? Data(contentsOf: job.appendingPathComponent("published.json")),
-               let uris = try? JSONSerialization.jsonObject(with: data) as? [String] {
-                for uri in uris { do { try removeUri(uri) } catch { clean = false } }
+            if !FileManager.default.fileExists(atPath: root.appendingPathComponent("receipts/\(job.lastPathComponent).json").path) {
+                let journal = job.appendingPathComponent("published.json")
+                if FileManager.default.fileExists(atPath: journal.path) {
+                    do {
+                        guard let uris = try JSONSerialization.jsonObject(with: Data(contentsOf: journal)) as? [String] else { throw ScannerFailure(code: "invalid") }
+                        for uri in uris { do { try removeUri(uri) } catch { clean = false } }
+                    } catch { clean = false } // Keep unreadable recovery evidence, never guess it is safe to delete.
+                }
             }
             if clean { try? FileManager.default.removeItem(at: job) }
         }
@@ -241,7 +245,12 @@ final class ScannerEngine: NSObject, FlutterStreamHandler, VNDocumentCameraViewC
         ciImage = ciImage.applyingFilter("CIPerspectiveCorrection", parameters: ["inputTopLeft": vector(0), "inputTopRight": vector(1), "inputBottomRight": vector(2), "inputBottomLeft": vector(3)])
         let rotation = p["rotation"] as? Int ?? 0
         guard rotation % 90 == 0 else { throw ScannerFailure(code: "invalid") }
-        if rotation != 0 { ciImage = ciImage.transformed(by: CGAffineTransform(rotationAngle: -CGFloat(rotation) * .pi / 180)) }
+        switch ((rotation % 360) + 360) % 360 {
+        case 90: ciImage = ciImage.oriented(.right)
+        case 180: ciImage = ciImage.oriented(.down)
+        case 270: ciImage = ciImage.oriented(.left)
+        default: break
+        }
         let filter = p["filter"] as? String ?? "original"
         if filter == "enhanced" { ciImage = ciImage.applyingFilter("CIColorControls", parameters: [kCIInputContrastKey: 1.15, kCIInputBrightnessKey: 0.03]) }
         if filter == "greyscale" || filter == "bw" { ciImage = ciImage.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0]) }
