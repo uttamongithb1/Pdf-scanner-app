@@ -1,0 +1,16 @@
+{
+  "tag": "v0.1.0-preview.1",
+  "target_commit": "d76898ec789501380f9e03df1cc755d3f8733cb9",
+  "source_commit": "4a7ae5f73fb457ac953d3e04cbface22ee22d726",
+  "run_id": 42335247077,
+  "artifacts": {
+    "android-release-development-apk": {
+      "id": 13559024471,
+      "digest": "sha256:94b72af09be65c3a56d9d7c09e5560da75130d37c1d804e347f5b8c478bf02f5"
+    },
+    "ios-simulator-app": {
+      "id": 13559526601,
+      "digest": "sha256:d304690a73510566aeba60e5a1cb422fe1c485c289850962cfc6645c1ea75d64"
+    }
+  }
+}
