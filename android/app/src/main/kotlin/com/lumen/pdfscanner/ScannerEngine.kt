@@ -50,7 +50,7 @@ class ScannerEngine(private val activity: Activity, messenger: BinaryMessenger):
     override fun onMethodCall(call: MethodCall,r: MethodChannel.Result) {
         val a=(call.arguments as? Map<String,Any?>) ?: emptyMap()
         if(call.method=="cancel") {cancelled.set(true);r.success(null);return}
-        if(call.method=="scan") {scan((a["limit"] as Number).toInt(),r);return}
+        if(call.method=="scan") {scan(a["session"] as String,(a["limit"] as Number).toInt(),r);return}
         if(call.method=="chooseFolder") {chooseFolder(r);return}
         if(call.method=="export" && exporting) {r.error("busy",null,null);return}
         if(call.method=="export") {exporting=true;cancelled.set(false)}
@@ -58,13 +58,14 @@ class ScannerEngine(private val activity: Activity, messenger: BinaryMessenger):
             try {
                 val value:Any?=when(call.method) {
                     "initialise", "retryRecovery" -> initialise()
+                    "acknowledgeCapture" -> {removeCapture(a["session"] as String);null}
                     "acknowledgeDeletion" -> {acknowledgeDeletion(a["id"] as String);null}
                     "maintenance" -> {maintenance(a);null}
                     "privateFolder" -> {prefs.edit().remove("tree").apply();location()}
                     "stage" -> stage(a["session"] as String,a["paths"] as List<String>)
                     "preview" -> preview(a)
                     "export" -> export(a)
-                    "discard", "acknowledge" -> {session(a["session"] as String).deleteRecursively();null}
+                    "discard", "acknowledge" -> {val id=a["session"] as String;removeCapture(id);if(!session(id).deleteRecursively())throw Failure("delete");null}
                     "open","share" -> {share(a,call.method=="share");null}
                     "pdfPage" -> pdfPage(a)
                     "rename" -> rename(a)
@@ -111,10 +112,13 @@ class ScannerEngine(private val activity: Activity, messenger: BinaryMessenger):
         val receipts=File(root,"receipts").listFiles()?.filter {it.extension=="json"}?.mapNotNull {
             runCatching {jsonMap(JSONObject(it.readText()))}.getOrNull()
         } ?: emptyList()
-        return mapOf("location" to location(),"receipts" to receipts,"recovery" to recovery)
+        val captures=File(root,"captures").listFiles()?.filter {it.extension=="json"}?.map {jsonMap(JSONObject(it.readText()))} ?: emptyList()
+        return mapOf("location" to location(),"receipts" to receipts,"recovery" to recovery,"captures" to captures)
     }
-    private fun scan(limit:Int,r:MethodChannel.Result) {
+    private fun scan(id:String,limit:Int,r:MethodChannel.Result) {
+        safeId(id)
         if(pending!=null) {r.error("busy",null,null);return}
+        prefs.edit().putString("captureSession",id).commit()
         pending=r
         val options=GmsDocumentScannerOptions.Builder().setGalleryImportAllowed(false)
             .setPageLimit(limit.coerceIn(1,50)).setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
@@ -133,6 +137,26 @@ class ScannerEngine(private val activity: Activity, messenger: BinaryMessenger):
     }
     fun activityResult(code:Int,result:Int,data:Intent?):Boolean {
         if(code!=701 && code!=702) return false
+        if(code==701) {
+            val callback=pending;pending=null
+            val id=prefs.getString("captureSession",null)
+            if(result!=Activity.RESULT_OK || data==null || id==null) {
+                prefs.edit().remove("captureSession").commit()
+                callback?.error("cancelled",null,null);return true
+            }
+            val paths=GmsDocumentScanningResult.fromActivityResultIntent(data)?.pages?.map {it.imageUri.toString()} ?: emptyList()
+            worker.execute {
+                try {
+                    val pages=stage(id,paths)
+                    val capture=File(root,"captures/${safeId(id)}.json")
+                    writeMutation(capture,mapOf("session" to id,"pages" to pages))
+                    prefs.edit().remove("captureSession").commit()
+                    if(callback!=null)success(callback,mapOf("pages" to pages))
+                    else main.post {sink?.success(mapOf("captureReady" to true))}
+                } catch(e:Throwable) { if(callback!=null)error(callback,e) }
+            }
+            return true
+        }
         val r=pending ?: return true;pending=null
         if(result!=Activity.RESULT_OK || data==null) {r.error("cancelled",null,null);return true}
         try {
@@ -330,14 +354,25 @@ class ScannerEngine(private val activity: Activity, messenger: BinaryMessenger):
             job.deleteRecursively();return receipt
         }catch(e:Throwable){published.forEach{runCatching{removeUri(it)}};throw e}
     }
-    private fun stem(s:String)=Normalizer.normalize(s,Normalizer.Form.NFC).replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"),"").trim().trim('.').take(100).ifEmpty{"Scan"}
+    private fun stem(s:String):String {
+        val clean=Normalizer.normalize(s,Normalizer.Form.NFC).replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"),"").trim().trim('.')
+        val points=clean.codePoints().limit(100).toArray()
+        val result=StringBuilder();var bytes=0
+        for(point in points) {
+            val unit=String(Character.toChars(point));val size=unit.toByteArray(Charsets.UTF_8).size
+            if(bytes+size>180)break
+            result.append(unit);bytes+=size
+        }
+        return result.toString().ifEmpty {"Scan"}
+    }
+
     private fun saveReceipt(id:String,a:Map<String,Any?>) {
         val dir=File(root,"receipts").apply{mkdirs()};val part=File(dir,"$id.part")
         part.outputStream().use{it.write(JSONObject(a).toString().toByteArray());it.fd.sync()}
         if(!part.renameTo(File(dir,"$id.json")))throw Failure("write")
     }
     private fun jsonMap(j:JSONObject):Map<String,Any?> = j.keys().asSequence().associateWith {key->
-        val v=j.get(key);when(v){JSONObject.NULL->null;is JSONObject->jsonMap(v);is JSONArray->(0 until v.length()).map{v.get(it)};else->v}
+        val v=j.get(key);when(v){JSONObject.NULL->null;is JSONObject->jsonMap(v);is JSONArray->(0 until v.length()).map{ val item=v.get(it);if(item is JSONObject)jsonMap(item) else item };else->v}
     }
     private fun share(a:Map<String,Any?>,share:Boolean) {
         val dir=File(activity.cacheDir,"shares").apply{mkdirs()};val copy=File(dir,"${stem(a["title"] as String)}.pdf")
@@ -392,6 +427,12 @@ class ScannerEngine(private val activity: Activity, messenger: BinaryMessenger):
         if(a["deleteImages"]==true)(a["images"] as? List<*>)?.forEach{removeUri(it as String)}
         removeUri(a["uri"] as String)
         File(root,"receipts/${safeId(a["id"] as String)}.json").delete()
+        val thumb=File(root,"thumbs/${safeId(a["id"] as String)}.jpg")
+        if(thumb.exists()&&!thumb.delete())throw Failure("delete")
+    }
+    private fun removeCapture(id:String) {
+        val file=File(root,"captures/${safeId(id)}.json")
+        if(file.exists()&&!file.delete())throw Failure("write")
     }
     private fun mutationFile(id:String)=File(root,"mutations/${safeId(id)}.json")
     private fun writeMutation(file:File,value:Map<String,Any?>) {

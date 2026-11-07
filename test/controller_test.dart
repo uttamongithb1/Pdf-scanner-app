@@ -19,6 +19,7 @@ class MemoryStore extends LocalStore {
   bool failNextCommit = false;
   bool failNextRemove = false;
   final saved = <SavedDocument>[];
+  final unsaved = <Draft>[];
   @override
   Future<void> saveDocument(SavedDocument doc) async {
     if (failNextCommit) {
@@ -47,7 +48,13 @@ class MemoryStore extends LocalStore {
   @override
   Future<void> clearDraft(String id) async {}
   @override
-  Future<void> saveDraft(Draft d) async {}
+  Future<void> saveDraft(Draft d) async {
+    unsaved.removeWhere((item) => item.id == d.id);
+    unsaved.add(d);
+  }
+
+  @override
+  Future<List<Draft>> drafts() async => unsaved;
   @override
   Future<List<SavedDocument>> documents() async => saved;
 }
@@ -257,6 +264,48 @@ void main() {
     await c.retryRecovery();
     expect(c.needsRecovery, isTrue);
     expect(c.recovery.single['id'], 'pending');
+    c.dispose();
+  });
+  test(
+    'returned native capture is recovered once without duplicate pages',
+    () async {
+      final store = MemoryStore();
+      final platform = ExportPlatform();
+      final c = await controller(store, platform);
+      await store.saveDraft(fixture());
+      platform.recoveryState = {
+        'receipts': [],
+        'recovery': [],
+        'captures': [
+          {
+            'session': 'session',
+            'pages': [fixture().pages.first.toJson()],
+          },
+        ],
+      };
+      await c.retryRecovery();
+      await c.retryRecovery();
+      expect(c.draft!.pages.length, 1);
+      expect(store.unsaved.single.pages.length, 1);
+      expect(
+        platform.methods.where((m) => m == 'acknowledgeCapture').length,
+        2,
+      );
+      c.dispose();
+    },
+  );
+
+  test('resuming another draft preserves the previous draft', () async {
+    final store = MemoryStore();
+    final c = await controller(store, ExportPlatform());
+    await store.saveDraft(fixture());
+    await store.saveDraft(Draft('older', [], DateTime.utc(2025)));
+    await c.resumeDraft('older');
+    expect(c.draft!.id, 'older');
+    expect(
+      store.unsaved.map((item) => item.id),
+      containsAll(['session', 'older']),
+    );
     c.dispose();
   });
 }

@@ -20,6 +20,7 @@ final class ScannerEngine: NSObject, FlutterStreamHandler, VNDocumentCameraViewC
     private var sink: FlutterEventSink?
     private var pending: FlutterResult?
     private var captureLimit = 50
+    private var captureSession = ""
     private let lock = NSLock()
     private var cancelled = false
     private var exporting = false
@@ -55,7 +56,7 @@ final class ScannerEngine: NSObject, FlutterStreamHandler, VNDocumentCameraViewC
     private func handle(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
         let a = call.arguments as? [String: Any] ?? [:]
         if call.method == "cancel" { lock.lock(); cancelled = true; lock.unlock(); result(nil); return }
-        if call.method == "scan" { captureLimit = min(50,max(1,a["limit"] as? Int ?? 50)); scan(result); return }
+        if call.method == "scan" { captureSession = a["session"] as? String ?? ""; captureLimit = min(50,max(1,a["limit"] as? Int ?? 50)); scan(result); return }
         if call.method == "chooseFolder" || call.method == "privateFolder" { result("On My iPhone → PDF Scanner"); return }
         if call.method == "export" {
             lock.lock()
@@ -67,14 +68,20 @@ final class ScannerEngine: NSObject, FlutterStreamHandler, VNDocumentCameraViewC
                 let value: Any?
                 switch call.method {
                 case "initialise", "retryRecovery": value = try self.initialise()
+                case "acknowledgeCapture":
+                    let file = self.root.appendingPathComponent("captures/\(try self.safeId(a["session"] as! String)).json")
+                    if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }; value = nil
                 case "acknowledgeDeletion": try self.acknowledgeDeletion(a["id"] as! String); value = nil
                 case "maintenance": self.maintenance(a); value = nil
                 case "stage": value = try self.stage(a)
                 case "preview": value = try self.preview(a)
                 case "export": value = try self.export(a)
                 case "discard", "acknowledge":
-                    let dir = try self.session(a["session"] as! String)
-                    try? FileManager.default.removeItem(at: dir); value = nil
+                    let id = try self.safeId(a["session"] as! String)
+                    let capture = self.root.appendingPathComponent("captures/\(id).json")
+                    if FileManager.default.fileExists(atPath: capture.path) { try FileManager.default.removeItem(at: capture) }
+                    let dir = self.root.appendingPathComponent("drafts/\(id)")
+                    if FileManager.default.fileExists(atPath: dir.path) { try FileManager.default.removeItem(at: dir) }; value = nil
                 case "open", "share": try self.share(a, share: call.method == "share"); value = nil
                 case "pdfPage": value = try self.pdfPage(a)
                 case "rename": value = try self.rename(a)
@@ -126,7 +133,9 @@ final class ScannerEngine: NSObject, FlutterStreamHandler, VNDocumentCameraViewC
             guard let data = try? Data(contentsOf: url) else { return nil }
             return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         }
-        return ["location": "On My iPhone → PDF Scanner", "receipts": receipts, "recovery": recovery]
+        let captureFiles = (try? FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("captures"), includingPropertiesForKeys: nil)) ?? []
+        let captures = try captureFiles.filter { $0.pathExtension == "json" }.map { try JSONSerialization.jsonObject(with: Data(contentsOf: $0)) }
+        return ["location": "On My iPhone → PDF Scanner", "receipts": receipts, "recovery": recovery, "captures": captures]
     }
     private func scan(_ result: @escaping FlutterResult) {
         guard pending == nil else { result(FlutterError(code: "busy", message: nil, details: nil)); return }
@@ -162,7 +171,17 @@ final class ScannerEngine: NSObject, FlutterStreamHandler, VNDocumentCameraViewC
                     try data.write(to: file, options: .atomic); paths.append(file.path)
                 }
             }
-            result(paths)
+            let sessionId = captureSession
+            let capturedPaths = paths
+            worker.async {
+                do {
+                    let pages = try self.stage(["session": sessionId, "paths": capturedPaths])
+                    let dir = try self.directory(self.root.appendingPathComponent("captures"))
+                    let file = dir.appendingPathComponent("\(try self.safeId(sessionId)).json")
+                    try self.writeMutation(file, ["session": sessionId, "pages": pages])
+                    self.finish(result, ["pages": pages])
+                } catch { self.fail(result, error) }
+            }
         } catch { fail(result, error) }
     }
     private func decode(_ path: String, edge: Int = 4096) throws -> CGImage {
@@ -241,7 +260,11 @@ final class ScannerEngine: NSObject, FlutterStreamHandler, VNDocumentCameraViewC
     private func progress(_ phase: String, _ completed: Int, _ total: Int) {
         DispatchQueue.main.async { self.sink?(["phase": phase, "completed": completed, "total": total]) }
     }
-    private func relativeUri(_ url: URL) -> String { "local:" + String(url.path.dropFirst(documents.path.count)) }
+    private func relativeUri(_ url: URL) -> String {
+        let base = documents.standardizedFileURL.resolvingSymlinksInPath().path
+        let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+        return "local:" + String(path.dropFirst(base.count))
+    }
     private func resolveUri(_ uri: String) throws -> URL {
         guard uri.hasPrefix("local:/") else { throw ScannerFailure(code: "invalid") }
         let url = documents.appendingPathComponent(String(uri.dropFirst(7))).standardizedFileURL.resolvingSymlinksInPath()
@@ -335,7 +358,13 @@ final class ScannerEngine: NSObject, FlutterStreamHandler, VNDocumentCameraViewC
     private func stem(_ input: String) -> String {
         let invalid = CharacterSet(charactersIn: "\\/:*?\"<>|").union(.controlCharacters)
         let filtered = String(String.UnicodeScalarView(input.precomposedStringWithCanonicalMapping.unicodeScalars.filter { !invalid.contains($0) }))
-        let value = String(filtered.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "."))).prefix(100))
+        let trimmed = filtered.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
+        var value = "", bytes = 0
+        for scalar in trimmed.unicodeScalars.prefix(100) {
+            let unit = String(scalar), size = String(scalar).utf8.count
+            if bytes + size > 180 { break }
+            value += unit; bytes += size
+        }
         return value.isEmpty ? "Scan" : value
     }
     private func saveReceipt(_ id: String, _ value: [String: Any]) throws {
@@ -380,12 +409,21 @@ final class ScannerEngine: NSObject, FlutterStreamHandler, VNDocumentCameraViewC
     }
     private func removeUri(_ uri: String) throws {
         let url = try resolveUri(uri)
-        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        var coordinationError: NSError?
+        var removalError: Error?
+        NSFileCoordinator().coordinate(writingItemAt: url, options: .forDeleting, error: &coordinationError) { coordinated in
+            do { try FileManager.default.removeItem(at: coordinated) } catch { removalError = error }
+        }
+        if let error = coordinationError { throw error }
+        if let error = removalError { throw error }
     }
     private func performDelete(_ a: [String: Any]) throws {
         if a["deleteImages"] as? Bool == true { for uri in a["images"] as? [String] ?? [] { try removeUri(uri) } }
         try removeUri(a["uri"] as! String)
         try? FileManager.default.removeItem(at: root.appendingPathComponent("receipts/\(safeId(a["id"] as! String)).json"))
+        let thumb = root.appendingPathComponent("thumbs/\(try safeId(a["id"] as! String)).jpg")
+        if FileManager.default.fileExists(atPath: thumb.path) { try FileManager.default.removeItem(at: thumb) }
     }
     private func mutationFile(_ id: String) throws -> URL { try directory(root.appendingPathComponent("mutations")).appendingPathComponent("\(safeId(id)).json") }
     private func writeMutation(_ file: URL, _ value: [String: Any]) throws {
@@ -408,13 +446,14 @@ final class ScannerEngine: NSObject, FlutterStreamHandler, VNDocumentCameraViewC
         try writeMutation(file, ["kind": "delete", "before": a]); _ = try finishMutation(file)
     }
     private func finishMutation(_ file: URL) throws -> [String: Any] {
-        let value = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
-        let before = value["before"] as! [String: Any], id = before["id"] as! String
+        guard let value = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any],
+              let before = value["before"] as? [String: Any], let id = before["id"] as? String,
+              before["uri"] is String else { throw ScannerFailure(code: "invalid") }
         let result: [String: Any]
         if value["kind"] as? String == "delete" {
             try performDelete(before); result = ["id": id, "deleted": true]; try saveReceipt(id, result)
         } else {
-            let after = value["after"] as! [String: Any]
+            guard let after = value["after"] as? [String: Any], after["uri"] is String, after["title"] is String else { throw ScannerFailure(code: "invalid") }
             let source = try resolveUri(before["uri"] as! String), target = try resolveUri(after["uri"] as! String)
             if FileManager.default.fileExists(atPath: source.path) {
                 guard !FileManager.default.fileExists(atPath: target.path) else { throw ScannerFailure(code: "collision") }

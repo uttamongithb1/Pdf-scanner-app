@@ -24,7 +24,18 @@ class ScannerPlatform {
   }
 
   Future<List<PageAsset>> scan(String session, int remaining) async {
-    final paths = await call<List<dynamic>>('scan', {'limit': remaining});
+    final result = await call<dynamic>('scan', {
+      'session': session,
+      'limit': remaining,
+    });
+    if (result is Map) {
+      final pages = (result['pages'] as List)
+          .map((e) => PageAsset.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      if (pages.length > remaining) throw ScanFailure('limit');
+      return pages;
+    }
+    final paths = result as List<dynamic>?;
     final selected = List<String>.from(paths ?? []);
     if (selected.length > remaining) throw ScanFailure('limit');
     return stage(session, selected);

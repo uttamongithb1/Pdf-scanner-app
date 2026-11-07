@@ -89,6 +89,10 @@ jobs:
           name: ios-simulator-app
           path: build/ios/ios-simulator-app.tar.gz
           if-no-files-found: error
+      - name: Boot an available iPhone simulator
+        id: simulator
+        run: python3 scripts/ci_run.py python3 scripts/boot_ios_simulator.py
+      - run: python3 scripts/ci_run.py flutter test integration_test/native_flow_test.dart -d "${{ steps.simulator.outputs.device }}" --reporter expanded
       - run: python3 scripts/ci_run.py flutter build ios --release --no-codesign
       - run: git diff --exit-code -- ios/Podfile.lock
 

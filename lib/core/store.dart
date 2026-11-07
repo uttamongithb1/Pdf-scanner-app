@@ -65,12 +65,23 @@ class LocalStore {
       }, conflictAlgorithm: ConflictAlgorithm.replace)
       .then((_) {});
   Future<Draft?> draft() async {
-    final rows = await db.query('drafts');
+    final rows = await db.query('drafts', orderBy: 'rowid DESC', limit: 1);
     if (rows.isEmpty) return null;
     return Draft.fromJson(
       Map<String, dynamic>.from(jsonDecode(rows.last['body'] as String) as Map),
     );
   }
+
+  Future<List<Draft>> drafts() async =>
+      (await db.query('drafts', orderBy: 'rowid DESC'))
+          .map(
+            (row) => Draft.fromJson(
+              Map<String, dynamic>.from(
+                jsonDecode(row['body'] as String) as Map,
+              ),
+            ),
+          )
+          .toList();
 
   Future<void> clearDraft(String id) =>
       db.delete('drafts', where: 'id=?', whereArgs: [id]).then((_) {});

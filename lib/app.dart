@@ -234,6 +234,18 @@ class _LibraryShellState extends ConsumerState<LibraryShell>
             ListView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
               children: [
+                if (c.needsRecovery)
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.warning_amber),
+                      title: const Text('A file operation needs recovery'),
+                      subtitle: const Text(
+                        'Reconnect your storage, then retry in Settings.',
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => setState(() => tab = 2),
+                    ),
+                  ),
                 Text(
                   'A little less paper.\nA lot more organised.',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
@@ -478,7 +490,7 @@ class _LibraryShellState extends ConsumerState<LibraryShell>
                       children: [
                         CircularProgressIndicator(),
                         SizedBox(height: 16),
-                        Text('Preparing your pages…'),
+                        Text('Working on your files…'),
                       ],
                     ),
                   ),

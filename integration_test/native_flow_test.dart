@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:pdf_scanner/core/models.dart';
 import 'package:pdf_scanner/core/platform.dart';
 import 'package:pdf_scanner/core/store.dart';
@@ -133,8 +134,9 @@ void main() {
         flush: true,
       );
       final images = List<String>.from(after['images'] as List);
-      if (images.isNotEmpty)
+      if (images.isNotEmpty) {
         await File.fromUri(Uri.parse(images.first)).delete();
+      }
       state = await platform.call<Map>('initialise');
       expect(await target.exists(), isFalse);
       expect(
@@ -161,6 +163,20 @@ void main() {
       final store = await LocalStore.open();
       try {
         await store.saveDraft(Draft(id, repeated, DateTime.now()));
+        await store.db.execute(
+          'ALTER TABLE drafts RENAME TO saved_drafts_test',
+        );
+        try {
+          await expectLater(
+            store.commitExport(SavedDocument(data), id),
+            throwsA(isA<DatabaseException>()),
+          );
+          expect((await store.documents()).any((doc) => doc.id == id), isFalse);
+        } finally {
+          await store.db.execute(
+            'ALTER TABLE saved_drafts_test RENAME TO drafts',
+          );
+        }
         await store.commitExport(SavedDocument(data), id);
         expect(await store.draft(), isNull);
         expect((await store.documents()).any((doc) => doc.id == id), isTrue);
@@ -173,4 +189,47 @@ void main() {
       }
     },
   );
+  testWidgets('corrupt decoder input rolls back a partially staged batch', (
+    tester,
+  ) async {
+    final sourceId = const Uuid().v4();
+    final source = (await fixture(sourceId)).first;
+    final bad = File(
+      '${(await getTemporaryDirectory()).path}/invalid-${const Uuid().v4()}.jpg',
+    );
+    await bad.writeAsBytes([0xff, 0xd8, 0, 1, 2, 3, 4], flush: true);
+    final id = const Uuid().v4();
+    await expectLater(
+      platform.stage(id, [source.path, bad.path]),
+      throwsA(isA<ScanFailure>()),
+    );
+    expect(await File(source.path).exists(), isTrue);
+    await bad.delete();
+    await platform.call<void>('discard', {'session': sourceId});
+    await platform.call<void>('discard', {'session': id});
+  });
+  testWidgets('maintenance removes only old unreferenced previews', (
+    tester,
+  ) async {
+    final id = const Uuid().v4();
+    final source = (await fixture(id)).first;
+    final folder = File(source.path).parent;
+    final active = await File(
+      source.thumb,
+    ).copy('${folder.path}/preview-active.jpg');
+    final orphan = await File(
+      source.thumb,
+    ).copy('${folder.path}/preview-orphan.jpg');
+    final old = DateTime.now().subtract(const Duration(days: 3));
+    for (final file in [active, orphan, File(source.path)]) {
+      await file.setLastModified(old);
+    }
+    await platform.call<void>('maintenance', {
+      'protectedPaths': [active.path, source.path],
+    });
+    expect(await active.exists(), isTrue);
+    expect(await orphan.exists(), isFalse);
+    expect(await File(source.path).exists(), isTrue);
+    await platform.call<void>('discard', {'session': id});
+  });
 }

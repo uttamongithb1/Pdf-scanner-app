@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../app.dart';
 import '../core/models.dart';
 import 'theme.dart';
+import 'review.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -23,6 +24,17 @@ class SettingsScreen extends ConsumerWidget {
             DropdownMenuItem(value: 2, child: Text('Dark')),
           ],
           onChanged: (v) => c.preference('theme', v!),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.drafts_outlined),
+          title: const Text('Saved and recovered drafts'),
+          subtitle: const Text(
+            'Resume an older scan. Drafts are never automatically deleted.',
+          ),
+          onTap: c.busy || c.exporting || c.pendingCommit != null
+              ? null
+              : () => _drafts(context, ref),
         ),
         const SectionLabel('Scanning defaults'),
         DropdownButtonFormField<String>(
@@ -171,6 +183,55 @@ class SettingsScreen extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  Future<void> _drafts(BuildContext context, WidgetRef ref) async {
+    final c = ref.read(scannerProvider);
+    await report(context, () async {
+      final drafts = await c.store.drafts();
+      if (!context.mounted) return;
+      final selected = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Saved drafts'),
+          content: SizedBox(
+            width: 400,
+            child: drafts.isEmpty
+                ? const Text('No unsaved scans.')
+                : ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final item in drafts)
+                        ListTile(
+                          title: Text(
+                            '${item.pages.length} ${item.pages.length == 1 ? 'page' : 'pages'}',
+                          ),
+                          subtitle: Text(
+                            '${shortDate(item.createdAt.toLocal())} · Tap to resume',
+                          ),
+                          selected: item.id == c.draft?.id,
+                          onTap: () => Navigator.pop(ctx, item.id),
+                        ),
+                    ],
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+      if (selected == null) return;
+      await c.resumeDraft(selected);
+      if (context.mounted) {
+        await Navigator.push(
+          context,
+          MaterialPageRoute<void>(builder: (_) => const ReviewScreen()),
+        );
+      }
+    });
   }
 
   Future<void> _storage(BuildContext context, WidgetRef ref) async {

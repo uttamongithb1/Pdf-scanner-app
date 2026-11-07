@@ -69,6 +69,9 @@ class ScannerController extends ChangeNotifier {
     }
     await maintainCache();
     _progress = platform.progress.listen((e) {
+      if (e['captureReady'] == true && !busy && !exporting) {
+        unawaited(retryRecovery().catchError((Object _) {}));
+      }
       phase = e['phase'] as String? ?? 'Processing…';
       completed = (e['completed'] as num?)?.toInt() ?? 0;
       total = (e['total'] as num?)?.toInt() ?? 0;
@@ -131,6 +134,10 @@ class ScannerController extends ChangeNotifier {
       }
       draft = current.withPages([...current.pages, ...prepared]);
       await store.saveDraft(draft!);
+      if (!gallery && !manual)
+        await platform.call<void>('acknowledgeCapture', {
+          'session': current.id,
+        });
     } catch (e, stack) {
       monitoring.failure('capture', stack);
       if (e is ScanFailure) rethrow;
@@ -257,12 +264,48 @@ class ScannerController extends ChangeNotifier {
         if (session != null) {
           await store.commitExport(doc, session);
           await platform.call<void>('acknowledge', {'session': session});
+          if (draft?.id == session) draft = null;
+          if (pendingCommit?.id == doc.id) pendingCommit = null;
         } else {
           await store.saveDocument(doc);
         }
       }
     }
+    for (final raw in state['captures'] as List? ?? []) {
+      final capture = Map<String, dynamic>.from(raw as Map);
+      final session = capture['session'] as String;
+      final saved = await store.drafts();
+      final existing = saved.where((item) => item.id == session).firstOrNull;
+      final current = existing ?? Draft(session, [], DateTime.now());
+      final known = current.pages.map((page) => page.id).toSet();
+      final pages = (capture['pages'] as List)
+          .map((e) => PageAsset.fromJson(Map<String, dynamic>.from(e as Map)))
+          .where((page) => !known.contains(page.id))
+          .toList();
+      if (current.pages.length + pages.length > maxPages) {
+        recovery.add({'id': session, 'kind': 'captureLimit'});
+        continue;
+      }
+      final restored = current.withPages([...current.pages, ...pages]);
+      await store.saveDraft(restored);
+      await platform.call<void>('acknowledgeCapture', {'session': session});
+      if (draft == null || draft?.id == session) draft = restored;
+    }
     needsRecovery = recovery.isNotEmpty;
+  }
+
+  Future<void> resumeDraft(String id) async {
+    if (busy || exporting || pendingCommit != null) throw ScanFailure('busy');
+    await _writes;
+    final selected = (await store.drafts())
+        .where((item) => item.id == id)
+        .firstOrNull;
+    if (selected == null) throw ScanFailure('missing');
+    await store.saveDraft(
+      selected,
+    ); // Move the explicitly selected draft to most recent.
+    draft = selected;
+    notifyListeners();
   }
 
   Future<void> retryRecovery() async {
@@ -273,6 +316,9 @@ class ScannerController extends ChangeNotifier {
       final state = await platform.call<Map>('retryRecovery');
       await _applyRecovery(Map<String, dynamic>.from(state!));
       documents = await store.documents();
+    } catch (_) {
+      needsRecovery = true;
+      rethrow;
     } finally {
       busy = false;
       notifyListeners();
@@ -328,8 +374,9 @@ class ScannerController extends ChangeNotifier {
     if (busy || exporting) return;
     final now = DateTime.now().millisecondsSinceEpoch;
     if (now - (prefs.getInt('lastMaintenance') ?? 0) <
-        const Duration(days: 1).inMilliseconds)
+        const Duration(days: 1).inMilliseconds) {
       return;
+    }
     try {
       await _writes;
       await platform.call<void>('maintenance', {

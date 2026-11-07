@@ -50,4 +50,27 @@ void main() {
       ),
     );
   });
+  test(
+    'scan transports the draft identity and receives durable native assets',
+    () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            expect(call.method, 'scan');
+            expect(call.arguments, {'session': 'test-session', 'limit': 3});
+            return {
+              'pages': [
+                {
+                  'id': 'p',
+                  'path': '/source',
+                  'thumb': '/thumb',
+                  'width': 240,
+                  'height': 360,
+                },
+              ],
+            };
+          });
+      final pages = await ScannerPlatform().scan('test-session', 3);
+      expect(pages.single.id, 'p');
+    },
+  );
 }

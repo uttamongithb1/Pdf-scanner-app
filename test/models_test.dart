@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdf_scanner/core/models.dart';
 
@@ -15,7 +16,12 @@ void main() {
     });
     test('preserves Unicode and clips by code point', () {
       expect(safeStem('विद्यालय'), 'विद्यालय');
-      expect(safeStem('📄' * 140).runes.length, 100);
+      expect(safeStem('📄' * 140).runes.length, 45);
+      expect(
+        utf8.encode(safeStem('विद्यालय' * 100)).length,
+        lessThanOrEqualTo(180),
+      );
+      expect(safeStem('A' * 140).length, 100);
     });
   });
   group('Crop geometry', () {

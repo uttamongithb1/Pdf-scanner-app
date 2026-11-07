@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 const maxPages = 50;
@@ -108,8 +109,17 @@ String safeStem(String input) {
   ).hasMatch(s)) {
     s = 'Scan_$s';
   }
-  // Clip code points, never split UTF-16 surrogate pairs.
-  return String.fromCharCodes(s.runes.take(100));
+  // Filesystems commonly limit a name component to 255 bytes, not characters.
+  // Leave room for the extension/collision suffix without splitting Unicode.
+  final points = <int>[];
+  var bytes = 0;
+  for (final point in s.runes.take(100)) {
+    final size = utf8.encode(String.fromCharCode(point)).length;
+    if (bytes + size > 180) break;
+    points.add(point);
+    bytes += size;
+  }
+  return String.fromCharCodes(points);
 }
 
 String defaultTitle(DateTime d) {
